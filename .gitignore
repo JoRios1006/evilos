@@ -1,0 +1,27 @@
+# Carpetas y artefactos de compilación (CMake / Ninja)
+/build/
+build-*/
+cmake-build-*/
+.ninja_deps
+.ninja_log
+compile_commands.json
+
+# Archivos generados del Kernel e imágenes arrancables
+*.elf
+*.bin
+*.o
+*.iso
+iso_root/
+isodir/
+
+# Descargas locales de Limine (fuera del directorio build)
+/limine/
+
+# Configuración de editores e IDEs
+.vscode/
+.idea/
+.clangd/
+*.swp
+*.swo
+*~
+.DS_Store
