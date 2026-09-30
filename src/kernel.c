@@ -2,7 +2,9 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include "limine.h"
-
+#include <float.h>
+#include <flanterm.h>
+#include <flanterm_backends/fb.h>
 // 1. Marcador de inicio
 __attribute__((used, section(".requests_start")))
 static volatile uint64_t start_marker[4] = LIMINE_REQUESTS_START_MARKER;
@@ -101,7 +103,7 @@ unsigned int variable_global_inicializada = 0xCAFEBABE;
 int variable_bss_cero; // Debe inicializarse automáticamente en 0
 
 void kmain(void) {
-uart_init();
+    uart_init();
     uart_puts("\n\n=== REPORTE DE SISTEMA ===\n");
 
     // Verificar Globales y BSS
@@ -125,7 +127,7 @@ uart_init();
         uart_puts("\n");
     }
 
-    // Verificar HHDM (Crítico para el PMM)
+    // Verificar HHDM
     if (hhdm_req.response != NULL) {
         uart_puts("[INFO] HHDM Offset: ");
         uart_print_hex(hhdm_req.response->offset);
@@ -134,27 +136,25 @@ uart_init();
         uart_puts("[ERROR] HHDM no disponible.\n");
     }
 
-    // Identificar framebuffer y registrar detalles técnicos
+    // Inicializar Flanterm y renderizar el entorno gráfico
     if (fb_req.response != NULL && fb_req.response->framebuffer_count > 0) {
         struct limine_framebuffer *fb = fb_req.response->framebuffers[0];
-
-        uart_puts("[INFO] Framebuffer Address: ");
-        uart_print_hex((uint64_t)fb->address);
-
-        uart_puts("\n[INFO] Framebuffer Pitch: ");
-        uart_print_hex(fb->pitch);
-
-        uart_puts("\n[INFO] Framebuffer Size: ");
-        uart_print_hex(fb->width);
-        uart_puts("x");
-        uart_print_hex(fb->height);
-
-        uart_puts("\n[INFO] Framebuffer BPP: ");
-        uart_print_hex(fb->bpp);
         
-        uart_puts("\n[INFO] Framebuffer Memory Model: ");
-        uart_print_hex(fb->memory_model);
-        uart_puts("\n");
+        struct flanterm_context *ft_ctx = flanterm_fb_init(
+            NULL, NULL, 
+            fb->address, fb->width, fb->height, fb->pitch,
+            fb->red_mask_size, fb->red_mask_shift,
+            fb->green_mask_size, fb->green_mask_shift,
+            fb->blue_mask_size, fb->blue_mask_shift,
+            NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 
+            0, 0, 1, 0, 0, 0, 0, true
+        );
+
+        const char msg[] = "\n\033[32m[OK]\033[0m Emulador de terminal VT100 inicializado.\n"
+                           "\033[36mBienvenidos a Evilos (x86_64)\033[0m\n\n";
+        flanterm_write(ft_ctx, msg, sizeof(msg) - 1);
+        
+        uart_puts("[INFO] Flanterm instanciado en el Framebuffer primario.\n");
     } else {
         uart_puts("[WARNING] Framebuffer no disponible.\n");
     }

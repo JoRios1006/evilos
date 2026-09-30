@@ -17,6 +17,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(limine)
 
+FetchContent_Declare(
+    flanterm
+    GIT_REPOSITORY https://github.com/Mintsuki/Flanterm.git
+    GIT_TAG        trunk
+)
+FetchContent_MakeAvailable(flanterm)
 set(TARGET_TRIPLE "x86_64-unknown-none-elf")
 
 set(KERNEL_CFLAGS
@@ -49,10 +55,14 @@ set(KERNEL_LDFLAGS
     -no-pie
 )
 
+# Modificar el ejecutable para incluir las fuentes de Flanterm
 add_executable(kernel.elf
     src/kernel.c
+    src/libk.c
+    ${flanterm_SOURCE_DIR}/src/flanterm.c
+    ${flanterm_SOURCE_DIR}/src/flanterm_backends/fb.c
 )
-
+target_include_directories(kernel.elf PRIVATE ${flanterm_SOURCE_DIR}/src)
 target_compile_options(kernel.elf PRIVATE ${KERNEL_CFLAGS})
 target_link_options(kernel.elf PRIVATE ${KERNEL_LDFLAGS})
 
