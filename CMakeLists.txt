@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
-project(osdev_kernel C)
+project(osdev_kernel C ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(CMAKE_C_COMPILER "clang")
+set(CMAKE_ASM_COMPILER "clang") 
 set(CMAKE_LINKER "ld.lld")
 
 # 1. Módulo para descargar automáticamente las herramientas de Limine desde GitHub
@@ -59,6 +60,12 @@ set(KERNEL_LDFLAGS
 add_executable(kernel.elf
     src/kernel.c
     src/libk.c
+    src/drivers/uart.c
+    src/arch/x86_64/gdt.c
+    src/arch/x86_64/gdt_flush.S
+    src/arch/x86_64/idt.c
+    src/arch/x86_64/isr_stubs.S
+    src/arch/x86_64/isr.c
     ${flanterm_SOURCE_DIR}/src/flanterm.c
     ${flanterm_SOURCE_DIR}/src/flanterm_backends/fb.c
 )

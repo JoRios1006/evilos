@@ -1,10 +1,13 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include "arch/x86_64/idt.h"
 #include "limine.h"
 #include <float.h>
 #include <flanterm.h>
 #include <flanterm_backends/fb.h>
+#include "arch/x86_64/gdt.h"
+#include "drivers/uart.h"
 // 1. Marcador de inicio
 __attribute__((used, section(".requests_start")))
 static volatile uint64_t start_marker[4] = LIMINE_REQUESTS_START_MARKER;
@@ -49,48 +52,6 @@ static volatile struct limine_rsdp_request rsdp_req = {
 __attribute__((used, section(".requests_end")))
 static volatile uint64_t end_marker[2] = LIMINE_REQUESTS_END_MARKER;
 
-// --- Funciones UART ---
-static void outb(uint16_t port, uint8_t val) {
-    __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
-}
-
-static uint8_t inb(uint16_t port) {
-    uint8_t ret;
-    __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
-static void uart_init(void) {
-    outb(0x3F8 + 1, 0x00);
-    outb(0x3F8 + 3, 0x80);
-    outb(0x3F8 + 0, 0x03);
-    outb(0x3F8 + 1, 0x00);
-    outb(0x3F8 + 3, 0x03);
-    outb(0x3F8 + 2, 0xC7);
-    outb(0x3F8 + 4, 0x0B);
-}
-
-static void uart_putc(char c) {
-    while ((inb(0x3F8 + 5) & 0x20) == 0);
-    outb(0x3F8, c);
-}
-
-static void uart_puts(const char *str) {
-    for (size_t i = 0; str[i] != '\0'; i++) {
-        uart_putc(str[i]);
-    }
-}
-
-// Función auxiliar para imprimir números hexadecimales (imprescindible para direcciones de memoria)
-static void uart_print_hex(uint64_t value) {
-    const char *hex_chars = "0123456789ABCDEF";
-    uart_puts("0x");
-    // Imprimir los 16 nibbles (64 bits)
-    for (int i = 15; i >= 0; i--) {
-        uart_putc(hex_chars[(value >> (i * 4)) & 0xF]);
-    }
-}
-
 // Cadenas descriptivas para los tipos de memoria de Limine
 static const char *memmap_type_strings[] = {
     "USABLE", "RESERVED", "ACPI_RECLAIMABLE", "ACPI_NVS", 
@@ -104,6 +65,8 @@ int variable_bss_cero; // Debe inicializarse automáticamente en 0
 
 void kmain(void) {
     uart_init();
+    gdt_init();
+    idt_init();
     uart_puts("\n\n=== REPORTE DE SISTEMA ===\n");
 
     // Verificar Globales y BSS
@@ -151,7 +114,7 @@ void kmain(void) {
         );
 
         const char msg[] = "\n\033[32m[OK]\033[0m Emulador de terminal VT100 inicializado.\n"
-                           "\033[36mBienvenidos a Evilos (x86_64)\033[0m\n\n";
+                           "\n\033[36mBienvenidos a Evilos (x86_64)\033[0m\n\n";
         flanterm_write(ft_ctx, msg, sizeof(msg) - 1);
         
         uart_puts("[INFO] Flanterm instanciado en el Framebuffer primario.\n");
