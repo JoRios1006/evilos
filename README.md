@@ -676,3 +676,4 @@ El objetivo no es definir todas las propiedades del sistema desde el principio. 
 * What every computer scientist should know about floating-point arithmetic
 * Writing efficient programs (Bentley, Jon Louis)
 * Computer Systems A Programmer’s Perspective
+* Operating Systems: Design and Implementation, 3rd ed. Andrew S. Tanenbaum, and Albert S. Woodhull 
