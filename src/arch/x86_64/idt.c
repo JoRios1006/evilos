@@ -3,11 +3,11 @@
 static struct idt_entry idt[256];
 static struct idtr idtr;
 
-static void idt_set_entry(int vector, void (*isr)(void), uint8_t flags) {
+static void idt_set_entry(int vector, void (*isr)(void), uint8_t flags, uint8_t ist) {
     uint64_t addr = (uint64_t)isr;
     idt[vector].isr_low = addr & 0xFFFF;
-    idt[vector].kernel_cs = 0x08; // El selector de código de tu GDT
-    idt[vector].ist = 0;
+    idt[vector].kernel_cs = 0x08;
+    idt[vector].ist = ist; // <--- Asignamos el IST solicitado
     idt[vector].attributes = flags;
     idt[vector].isr_mid = (addr >> 16) & 0xFFFF;
     idt[vector].isr_high = (addr >> 32) & 0xFFFFFFFF;
@@ -31,14 +31,22 @@ static void (*isr_stubs[32])(void) = {
     isr23, isr24, isr25, isr26, isr27, isr28, isr29, isr30, isr31
 };
 
-void idt_init(void) {
-    // Inicializar las 32 excepciones de CPU
-    for (int i = 0; i < 32; i++) {
-        idt_set_entry(i, isr_stubs[i], 0x8E); // 0x8E: Presente, Ring 0, Interrupt Gate
+int idt_init(void) {
+	for (int i = 0; i < 32; i++) {
+        // Por defecto, todos usan IST 0 (no usan stack de emergencia)
+        uint8_t ist = 0;
+        
+        // Si es el Double Fault (Vector 8), forzamos a que use el IST 1
+        if (i == 8) {
+            ist = 1;
+        }
+
+        idt_set_entry(i, isr_stubs[i], 0x8E, ist);
     }
 
     idtr.limit = sizeof(idt) - 1;
     idtr.base = (uint64_t)&idt[0];
 
     __asm__ volatile ("lidt %0" : : "m"(idtr));
+	return 1;
 }

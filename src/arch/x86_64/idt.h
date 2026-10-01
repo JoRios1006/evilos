@@ -27,6 +27,6 @@ struct interrupt_frame {
     uint64_t rip, cs, rflags, rsp, ss; // Apilados automáticamente por el CPU
 } __attribute__((packed));
 
-void idt_init(void);
+int idt_init(void);
 
 #endif

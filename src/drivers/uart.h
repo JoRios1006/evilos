@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-void uart_init(void);
+int uart_init(uint16_t port);
 void uart_putc(char c);
 void uart_puts(const char *str);
 void uart_print_hex(uint64_t value);

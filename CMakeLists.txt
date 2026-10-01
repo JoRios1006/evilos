@@ -43,6 +43,7 @@ set(KERNEL_CFLAGS
     -Wextra
     -Wpedantic
     -Werror
+    -O2
     -g
 )
 

@@ -1,4 +1,5 @@
 #include "uart.h"
+#include <stdint.h>
 
 static void outb(uint16_t port, uint8_t val) {
     __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
@@ -10,14 +11,15 @@ static uint8_t inb(uint16_t port) {
     return ret;
 }
 
-void uart_init(void) {
-    outb(0x3F8 + 1, 0x00);
-    outb(0x3F8 + 3, 0x80);
-    outb(0x3F8 + 0, 0x03);
-    outb(0x3F8 + 1, 0x00);
-    outb(0x3F8 + 3, 0x03);
-    outb(0x3F8 + 2, 0xC7);
-    outb(0x3F8 + 4, 0x0B);
+int uart_init(uint16_t port) {
+    outb(port + 1, 0x00);
+    outb(port + 3, 0x80);
+    outb(port + 0, 0x03);
+    outb(port + 1, 0x00);
+    outb(port + 3, 0x03);
+    outb(port + 2, 0xC7);
+    outb(port + 4, 0x0B);
+	return 1;
 }
 
 void uart_putc(char c) {

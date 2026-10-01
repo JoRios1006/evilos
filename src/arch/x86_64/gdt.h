@@ -44,6 +44,6 @@ struct tss_64 {
     uint16_t iopb_offset;
 } __attribute__((packed));
 
-void gdt_init(void);
+int gdt_init(void);
 
 #endif
