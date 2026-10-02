@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "memory/kmalloc.h"
 #define NUKE *(volatile char *)0 = 0;
 #define UART_PORT 0x3F8
 #define ON_SUCCESS(expr, msg)                                                  \
@@ -38,17 +39,17 @@ __attribute__((
 
 // 3. Solicitudes anteriores (HHDM y Framebuffer)
 __attribute__((used,
-               section(".requests"))) static volatile struct limine_hhdm_request
+               section(".requests"))) volatile struct limine_hhdm_request
     hhdm_req = {.id = LIMINE_HHDM_REQUEST_ID, .revision = 0};
 
 __attribute__((
     used,
-    section(".requests"))) static volatile struct limine_framebuffer_request
+    section(".requests"))) volatile struct limine_framebuffer_request
     fb_req = {.id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 0};
 
 // 4. NUEVAS SOLICITUDES PARA TAREAS
 __attribute__((
-    used, section(".requests"))) static volatile struct limine_memmap_request
+    used, section(".requests"))) volatile struct limine_memmap_request
     memmap_req = {.id = LIMINE_MEMMAP_REQUEST_ID, .revision = 0};
 
 __attribute__((
@@ -183,6 +184,19 @@ SHOW_MEMORY:;
   if (gi < count)
     goto SHOW_MEMORY;
   gi = 0;
+  // Inicializar memoria dinámica
+  kmalloc_init();
+
+  // Prueba de humo de la Fase 3
+  void *test_ptr = kmalloc(4096);
+  if (test_ptr) {
+    kprintf("[OK] Prueba de kmalloc exitosa. Bloque asignado en: 0x%x\n",
+            (uint64_t)test_ptr);
+    kfree(test_ptr);
+    kprintf("[OK] kfree ejecutado correctamente.\n");
+  } else {
+    kprintf("[ERROR] Fallo en la prueba de kmalloc.\n");
+  }
 HALT:
   kprintf("\n[KERNEL] Halt.\n");
 HALT2:;

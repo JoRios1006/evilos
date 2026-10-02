@@ -49,56 +49,56 @@ Poder compilar, enlazar, generar una imagen arrancable y ejecutarla repetidament
 
 ### Toolchain
 
-* [ ] Elegir y fijar compilador C.
-* [ ] Fijar assembler.
-* [ ] Fijar linker.
-* [ ] Establecer compilación freestanding.
-* [ ] Desactivar dependencias accidentales de libc.
-* [ ] Establecer flags de compilación para x86-64.
-* [ ] Establecer flags de warnings estrictos.
-* [ ] Separar flags de debug y release.
-* [ ] Comprobar que el kernel no depende de código de userland.
+* [x] Elegir y fijar compilador C.
+* [x] Fijar assembler.
+* [x] Fijar linker.
+* [x] Establecer compilación freestanding.
+* [x] Desactivar dependencias accidentales de libc.
+* [x] Establecer flags de compilación para x86-64.
+* [x] Establecer flags de warnings estrictos.
+* [x] Separar flags de debug y release.
+* [x] Comprobar que el kernel no depende de código de userland.
 
 ### Link
 
-* [ ] Crear linker script.
-* [ ] Definir sección de código.
-* [ ] Definir sección de datos.
-* [ ] Definir BSS.
-* [ ] Exportar símbolos necesarios para localizar el kernel en memoria.
-* [ ] Verificar ELF resultante.
-* [ ] Comprobar alineamiento de las secciones.
+* [x] Crear linker script.
+* [x] Definir sección de código.
+* [x] Definir sección de datos.
+* [x] Definir BSS.
+* [x] Exportar símbolos necesarios para localizar el kernel en memoria.
+* [x] Verificar ELF resultante.
+* [x] Comprobar alineamiento de las secciones.
 
 ### Limine
 
-* [ ] Fijar versión de Limine utilizada.
-* [ ] Crear configuración mínima.
-* [ ] Crear imagen arrancable.
-* [ ] Arrancar desde QEMU.
-* [ ] Arrancar desde hardware real cuando sea posible.
-* [ ] Documentar exactamente qué deja preparado Limine.
-* [ ] Registrar qué solicitudes del protocolo utiliza el kernel.
+* [x] Fijar versión de Limine utilizada.
+* [x] Crear configuración mínima.
+* [x] Crear imagen arrancable.
+* [x] Arrancar desde QEMU.
+* [x] Arrancar desde hardware real cuando sea posible.
+* [x] Documentar exactamente qué deja preparado Limine.
+* [x] Registrar qué solicitudes del protocolo utiliza el kernel.
 
 ### Debug
 
-* [ ] Crear salida de diagnóstico temprana.
-* [ ] Poder imprimir texto antes de tener framebuffer.
-* [ ] Crear función de panic.
-* [ ] Crear manejo de excepciones fatal.
-* [ ] Imprimir al menos:
+* [x] Crear salida de diagnóstico temprana.
+* [x] Poder imprimir texto antes de tener framebuffer.
+* [x] Crear función de panic.
+* [x] Crear manejo de excepciones fatal.
+* [x] Imprimir al menos:
 
-  * [ ] excepción;
-  * [ ] código de error;
-  * [ ] RIP;
-  * [ ] RSP;
-  * [ ] CR2 cuando corresponda.
+  * [x] excepción;
+  * [x] código de error;
+  * [x] RIP;
+  * [x] RSP;
+  * [x] CR2 cuando corresponda.
 
 ### Build reproducible
 
-* [ ] Un solo comando debe producir la imagen arrancable.
-* [ ] Un solo comando debe arrancar QEMU.
-* [ ] Un comando debe limpiar artefactos.
-* [ ] Documentar dependencias externas.
+* [x] Un solo comando debe producir la imagen arrancable.
+* [x] Un solo comando debe arrancar QEMU.
+* [x] Un comando debe limpiar artefactos.
+* [x] Documentar dependencias externas.
 
 ## Terminado cuando
 
@@ -130,32 +130,32 @@ No intentar todavía implementar el sistema de memoria completo.
 
 ### Entrada
 
-* [ ] Crear punto de entrada del kernel.
-* [ ] Crear stack inicial.
-* [ ] Saltar a C.
-* [ ] Verificar que las variables globales funcionan.
-* [ ] Verificar que BSS está correctamente inicializado.
+* [x] Crear punto de entrada del kernel.
+* [x] Crear stack inicial.
+* [x] Saltar a C.
+* [x] Verificar que las variables globales funcionan.
+* [x] Verificar que BSS está correctamente inicializado.
 
 ### Limine
 
-* [ ] Leer memory map.
-* [ ] Imprimir todas sus entradas.
-* [ ] Identificar memoria usable.
-* [ ] Identificar memoria reservada.
-* [ ] Identificar la región ocupada por el kernel.
-* [ ] Identificar framebuffer.
-* [ ] Registrar tamaño y formato del framebuffer.
-* [ ] Obtener RSDP y conservar la información para más adelante.
-* [ ] Decidir si se solicita también un mecanismo para acceder fácilmente a memoria física.
+* [x] Leer memory map.
+* [x] Imprimir todas sus entradas.
+* [x] Identificar memoria usable.
+* [x] Identificar memoria reservada.
+* [x] Identificar la región ocupada por el kernel.
+* [x] Identificar framebuffer.
+* [x] Registrar tamaño y formato del framebuffer.
+* [x] Obtener RSDP y conservar la información para más adelante.
+* [x] Decidir si se solicita también un mecanismo para acceder fácilmente a memoria física.
 
 Esta última decisión es importante antes del VMM. No hace falta resolverla ahora, pero sí dejarla explícita.
 
 ### CPU
 
-* [ ] Verificar modo de ejecución.
-* [ ] Verificar CPUID disponible.
-* [ ] Registrar características básicas de CPU.
-* [ ] No depender todavía de extensiones opcionales.
+* [x] Verificar modo de ejecución.
+* [x] Verificar CPUID disponible.
+* [x] Registrar características básicas de CPU.
+* [x] No depender todavía de extensiones opcionales.
 
 ## Terminado cuando
 
@@ -183,31 +183,31 @@ Tener control explícito sobre los eventos de CPU.
 
 ### GDT
 
-* [ ] Crear GDT propia.
-* [ ] Definir código de kernel.
-* [ ] Definir datos de kernel.
-* [ ] Recargar registros correspondientes.
-* [ ] Verificar que la ejecución continúa.
+* [x] Crear GDT propia.
+* [x] Definir código de kernel.
+* [x] Definir datos de kernel.
+* [x] Recargar registros correspondientes.
+* [x] Verificar que la ejecución continúa.
 
 ### IDT
 
-* [ ] Crear IDT.
-* [ ] Registrar excepciones CPU.
-* [ ] Crear handlers para:
+* [x] Crear IDT.
+* [x] Registrar excepciones CPU.
+* [x] Crear handlers para:
 
-  * [ ] divide error;
-  * [ ] invalid opcode;
-  * [ ] general protection;
-  * [ ] page fault;
-  * [ ] double fault.
-* [ ] Imprimir contexto de excepción.
-* [ ] Detener el CPU de forma controlada después de un error fatal.
+  * [x] divide error;
+  * [x] invalid opcode;
+  * [x] general protection;
+  * [x] page fault;
+  * [x] double fault.
+* [x] Imprimir contexto de excepción.
+* [x] Detener el CPU de forma controlada después de un error fatal.
 
 ### TSS
 
-* [ ] Crear TSS.
-* [ ] Configurar stack de excepción cuando sea necesario.
-* [ ] Preparar una ruta segura para double fault.
+* [x] Crear TSS.
+* [x] Configurar stack de excepción cuando sea necesario.
+* [x] Preparar una ruta segura para double fault.
 
 ### Interrupciones externas
 

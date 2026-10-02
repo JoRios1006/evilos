@@ -1,13 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
-project(osdev_kernel C ASM)
 
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-
+# 1. FORZAR CLANG Y LLD ANTES DE project()
 set(CMAKE_C_COMPILER "clang")
 set(CMAKE_ASM_COMPILER "clang") 
 set(CMAKE_LINKER "ld.lld")
 
+project(osdev_kernel C ASM)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 # 1. Módulo para descargar automáticamente las herramientas de Limine desde GitHub
 include(FetchContent)
 FetchContent_Declare(
@@ -68,9 +69,16 @@ add_executable(kernel.elf
     src/arch/x86_64/isr_stubs.S
     src/arch/x86_64/isr.c
     ${flanterm_SOURCE_DIR}/src/flanterm.c
-    ${flanterm_SOURCE_DIR}/src/flanterm_backends/fb.c
+    src/memory/buddy_alloc.c
+    src/memory/kmalloc.c
+    ${flanterm_SOURCE_DIR}/src/flanterm.c
+    ${flanterm_SOURCE_DIR}/src/flanterm_backends/fb.c   ${flanterm_SOURCE_DIR}/src/flanterm_backends/fb.c
 )
-target_include_directories(kernel.elf PRIVATE ${flanterm_SOURCE_DIR}/src)
+target_include_directories(kernel.elf PRIVATE 
+    ${flanterm_SOURCE_DIR}/src
+    src
+    src/memory
+)
 target_compile_options(kernel.elf PRIVATE ${KERNEL_CFLAGS})
 target_link_options(kernel.elf PRIVATE ${KERNEL_LDFLAGS})
 
