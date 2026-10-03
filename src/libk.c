@@ -1,6 +1,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "slice.h"
 
 // strlen clásico
 size_t strlen(const char *s) {
@@ -84,6 +85,15 @@ int vsnprintf(char *str, size_t size, const char *format, va_list args) {
           val = "(null)";
         for (int k = 0; val[k] && j < size - 1; k++)
           str[j++] = val[k];
+      } else if (format[i] == 'v') { 
+        StringView sv = va_arg(args, StringView);
+        if (!sv.data) {
+          sv = SV("(null view)");
+        }
+        // Clave: iteramos hasta sv.length, ignorando cualquier '\0'
+        for (size_t k = 0; k < sv.length && j < size - 1; k++) {
+          str[j++] = sv.data[k];
+        }
       } else if (format[i] == 'c') { // Caracteres
         str[j++] = (char)va_arg(args, int);
       } else if (format[i] == '%') {

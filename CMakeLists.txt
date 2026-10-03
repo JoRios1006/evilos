@@ -105,3 +105,11 @@ add_custom_target(run
     DEPENDS iso
     COMMENT "Ejecutando QEMU..."
 )
+
+add_custom_target(test_boot
+    COMMAND ${LUA_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/runner.lua 
+            ${CMAKE_BINARY_DIR}/kernel.iso 
+            "[OK] kfree ejecutado correctamente."
+    DEPENDS iso
+    COMMENT "Ejecutando tests de integracion con Lua Posix..."
+)
