@@ -3,677 +3,846 @@ Emacs Vi Layered Operating System
 
 # RFC: Arquitectura del sistema experimental
 
-**Estado:** Draft
+**Estado:** Working Draft
 
-**Alcance:** Discusión de arquitectura
+**Plataforma actual:** x86-64
 
-**Implementación:** Fuera del alcance de este documento
+**Boot:** Limine v11
+
+**Implementación:** Parcial y evolutiva
 
 ---
 
 ## 1. Resumen
 
-Este documento describe la arquitectura de un sistema experimental para x86-64.
+Evilos es un sistema experimental para x86-64 con un núcleo pequeño escrito en C y Lua como lenguaje para buena parte de la lógica de alto nivel.
 
-El sistema tendrá un núcleo pequeño escrito en C y utilizará Lua como lenguaje de alto nivel para buena parte de la lógica del sistema. El arranque se realizará mediante Limine. La salida gráfica partirá del framebuffer entregado por el bootloader y utilizará un buffer secundario para el renderizado. La gestión de memoria se dividirá entre memoria física, memoria virtual y asignación de bloques.
+El objetivo no es construir un sistema operativo generalista ni reproducir la arquitectura de otro kernel. El objetivo es disponer de un sistema pequeño, observable y modificable, en el que las fronteras entre mecanismos, datos y lógica sean explícitas.
 
-El objetivo de esta arquitectura no es competir con sistemas operativos generales. Se busca una estructura pequeña, comprensible y modificable, en la que las responsabilidades estén separadas y cada capa haga la menor cantidad de trabajo necesaria.
+La arquitectura sigue una regla simple: primero debe existir una implementación que funcione y pueda medirse; después se decide si merece la pena generalizarla u optimizarla.
 
-La arquitectura será incremental. Primero se buscará que cada parte funcione con mecanismos simples. Las optimizaciones y mecanismos más complejos de gestión de memoria se incorporarán posteriormente sin obligar a rediseñar las capas superiores.
+La organización del sistema se apoya en:
+
+```text
+hardware
+   |
+   v
+C / mecanismos del kernel
+   |
+   +--> memoria
+   +--> interrupciones
+   +--> drivers
+   +--> colas / eventos
+   +--> primitives
+   |
+   v
+Lua / lógica de alto nivel
+   |
+   v
+UI, shell, módulos y coordinación
+```
+
+La dirección general no es una jerarquía rígida de capas. Los datos y eventos deben poder atravesar las capas intermedias sin que estas inventen semántica que pertenece al consumidor.
 
 ---
 
-## 2. Objetivos
+## 2. Estado actual
+
+El núcleo ya dispone de una base funcional sobre la que continuar el desarrollo.
+
+Actualmente implementado o integrado:
+
+```text
+[x] Limine
+[x] entrada x86-64
+[x] runtime C freestanding básico
+[x] UART
+[x] framebuffer + Flanterm
+[x] memory map
+[x] HHDM
+[x] kernel physical/virtual address
+[x] ACPI RSDP discovery
+[x] GDT
+[x] IDT
+[x] TSS
+[x] Buddy allocator
+[x] kmalloc / kfree sobre el allocator de memoria
+[x] prueba básica de allocation/free
+[x] unit tests ejecutables fuera del kernel
+[x] base Slice
+[x] base StringView
+```
+
+La implementación actual ya permite arrancar el kernel, obtener la descripción inicial de memoria y utilizar asignación dinámica del kernel.
+
+La memoria dinámica actual no debe confundirse con la arquitectura final de memoria virtual. El siguiente salto importante es separar claramente memoria física, memoria virtual, regiones y asignación de bloques.
+
+---
+
+## 3. Objetivos arquitectónicos
 
 El sistema deberá:
 
-* arrancar en x86-64 mediante Limine;
-* obtener del entorno de arranque el mapa de memoria y el framebuffer;
-* disponer de una forma básica de administrar memoria física;
-* disponer de memoria virtual;
+* arrancar mediante Limine;
+* inicializar explícitamente el estado de CPU necesario;
+* administrar memoria física;
+* administrar memoria virtual;
 * proporcionar asignación dinámica de bloques;
-* renderizar una interfaz gráfica básica;
-* ejecutar una máquina virtual Lua dentro del núcleo;
-* permitir que Lua invoque funciones proporcionadas por C;
-* permitir cargar y ejecutar módulos escritos en Lua;
-* procesar teclado y eventos mediante un modelo inicialmente cooperativo;
-* disponer de una interfaz basada en buffers y una línea de comandos integrada;
-* mantener una separación clara entre mecanismos de bajo nivel y lógica escrita en Lua.
+* procesar hardware mediante interrupciones mínimas y trabajo posterior fuera del contexto de interrupción;
+* utilizar estructuras de datos explícitas y pequeñas;
+* representar estados importantes mediante máquinas de estados finitos;
+* comunicar subsistemas desacoplados mediante eventos, colas o protocolos cuando corresponda;
+* ejecutar Lua dentro del kernel;
+* exponer a Lua una frontera C pequeña y explícita;
+* construir una interfaz basada en buffers y regiones;
+* permitir inspeccionar y modificar parte del estado del sistema durante la ejecución;
+* mantener una infraestructura de pruebas tanto fuera como dentro del kernel;
+* permitir reemplazar implementaciones concretas sin obligar a rediseñar las capas superiores.
+
+No se considera requisito que todos los subsistemas utilicen todas estas técnicas. Son herramientas de diseño, no una plantilla obligatoria.
 
 ---
 
-## 3. Fuera de alcance
+## 4. Principios de diseño
 
-Este documento no define:
+### 4.1 End-to-End: endpoints inteligentes, transporte simple
 
-* una implementación concreta de ningún componente;
-* una API pública definitiva;
-* nombres definitivos para estructuras, funciones o subsistemas;
-* un sistema de archivos concreto;
-* un protocolo de red concreto;
-* un formato de procesos o ejecutables;
-* aislamiento entre procesos de usuario;
-* planificación preventiva;
-* soporte para arquitecturas distintas de x86-64.
+Las capas intermedias deben transportar, ordenar, almacenar o proteger datos sin intentar anticipar la semántica futura del consumidor.
 
-Las decisiones que dependan de mediciones o experimentos posteriores se mantienen abiertas.
-
----
-
-## 4. Supuestos de arranque
-
-Se utilizará Limine como entorno de arranque. La versión actualmente utilizada en el proyecto es Limine v11.
-
-Antes de ejecutar la primera parte del núcleo se solicitarán los recursos necesarios mediante el protocolo correspondiente.
-
-Como mínimo interesan:
-
-* mapa de memoria física;
-* framebuffer;
-* información necesaria para acceder posteriormente a ACPI.
-
-El sistema no tratará a Limine como un gestor de dispositivos. El hardware que no sea necesario para el arranque será inicializado por el propio sistema.
-
-La información recibida durante el arranque se considera una descripción del estado inicial del sistema. A partir de ella, las capas posteriores construirán sus propias estructuras.
-
----
-
-## 5. Principio general de la arquitectura
-
-La arquitectura seguirá una separación simple:
-
-```text
-Hardware
-    |
-    v
-C
-    |
-    v
-Lua
-    |
-    v
-Aplicaciones y lógica del sistema
-```
-
-El código C será responsable de los mecanismos que requieren acceso directo al hardware, control de memoria, manejo de interrupciones y operaciones que no resulten adecuadas para Lua.
-
-Lua será responsable de la lógica de más alto nivel siempre que sea posible.
-
-La distinción principal será:
-
-```text
-C   = acceso y mecanismos
-Lua = lógica y coordinación
-```
-
-Esto no implica que Lua tenga acceso ilimitado a cualquier recurso del sistema. Las operaciones disponibles desde Lua dependerán explícitamente de las funciones que el núcleo exponga.
-
----
-
-# 6. Gestión de memoria
-
-## 6.1. Objetivo inicial
-
-La gestión de memoria se desarrollará en etapas.
-
-La primera etapa tendrá como objetivo hacer posible la ejecución del sistema. No se buscará inicialmente una implementación completa o especialmente eficiente.
-
-La segunda etapa podrá reemplazar progresivamente las soluciones iniciales por mecanismos más elaborados sin cambiar la interfaz utilizada por el resto del sistema.
-
-Por ejemplo, el mecanismo utilizado inicialmente para proporcionar memoria a Lua podrá posteriormente pasar a utilizar memoria física, memoria virtual y un asignador de bloques sin que Lua necesite conocer los detalles del cambio.
-
----
-
-## 6.2. Memoria física
-
-El mapa proporcionado por Limine será la fuente inicial para determinar qué memoria física puede utilizar el sistema.
-
-La unidad básica considerada será la página de 4 KiB.
-
-Se considera conveniente mantener soporte para páginas de mayor tamaño además de las páginas pequeñas.
-
-La razón principal es que las páginas pequeñas proporcionan una granularidad fina, mientras que las páginas grandes pueden reducir la cantidad de estructuras necesarias para representar determinados rangos de memoria y reducir el coste asociado a determinadas operaciones.
-
-La elección del tamaño de página utilizado en un rango determinado no implica que toda la memoria deba ser gestionada de una única manera.
-
----
-
-## 6.3. Metadata de memoria
-
-Se considera una hipótesis de diseño que las páginas pequeñas podrían no necesitar una estructura de metadata individual equivalente para cada página.
-
-Una posible organización sería asociar parte de la información administrativa a unidades de memoria mayores, mientras que las páginas de 4 KiB podrían permanecer en un estado más simple.
-
-La motivación es reducir la cantidad de información administrativa que debe mantenerse cuando existe una gran cantidad de páginas pequeñas.
-
-Esta idea presenta varias cuestiones abiertas.
-
-Para una página individual puede ser necesario conocer, dependiendo del uso:
-
-* si está libre;
-* si está asignada;
-* quién es su propietario;
-* si está compartida;
-* si tiene referencias activas;
-* si forma parte de una región mayor;
-* si puede ser liberada independientemente;
-* si está relacionada con alguna operación de entrada/salida.
-
-No todas estas propiedades necesitan necesariamente estar representadas en cada página.
-
-Una posible consecuencia de asociar metadata a unidades mayores es que determinadas páginas pequeñas compartan información administrativa común. Esto puede reducir memoria utilizada por las estructuras de gestión, pero aumenta la cantidad de trabajo necesaria para representar excepciones.
-
-Por tanto, la siguiente cuestión queda abierta:
-
-```text
-¿Cuánta información debe existir por página
-y cuánta puede asociarse a grupos de páginas?
-```
-
-No se adopta todavía una respuesta.
-
----
-
-## 6.4. Páginas grandes
-
-El uso de páginas grandes se considera principalmente una herramienta de organización y eficiencia, no una obligación para todos los tipos de memoria.
-
-Puede resultar útil para:
-
-* regiones grandes con una duración relativamente larga;
-* buffers grandes;
-* estructuras compartidas;
-* regiones utilizadas simultáneamente por varios componentes;
-* memoria que se quiera gestionar como una unidad.
-
-También podría facilitar una futura organización del metadata por grupos de páginas.
-
-No se asume que una página grande deba permanecer siempre íntegra. La arquitectura deberá permitir, al menos conceptualmente, dividir una región grande cuando sea necesario utilizar partes pequeñas de ella.
-
----
-
-## 6.5. Compartición de memoria
-
-La arquitectura deberá dejar abierta la posibilidad de compartir páginas entre componentes sin copiar su contenido.
-
-Esto requiere distinguir entre:
-
-```text
-memoria que pertenece a una sola entidad
-```
-
-y
-
-```text
-memoria utilizada por varias entidades
-```
-
-La forma concreta de representar las referencias no se define en este RFC.
-
-La gestión de memoria deberá permitir evolucionar hacia este modelo sin introducir desde el principio estructuras innecesarias para un sistema que inicialmente será simple.
-
-La misma consideración se aplica a mecanismos posteriores como copiar al escribir. No forman parte de la primera etapa, pero la representación interna de memoria no debería hacerlos imposibles.
-
----
-
-## 6.6. Memoria virtual
-
-La memoria virtual se utilizará para separar:
-
-* direcciones virtuales;
-* direcciones físicas;
-* regiones de memoria;
-* asignación de bloques.
-
-La capa de memoria virtual deberá permitir solicitar regiones virtuales de tamaño determinado sin exigir que su memoria física sea contigua.
-
-Esto permite representar una región virtual continua mediante páginas físicas independientes.
+La lógica específica debe permanecer en el extremo que realmente conoce el significado de los datos.
 
 Por ejemplo:
 
 ```text
-Virtual:
-+----------------------------------+
-|             región               |
-+----------------------------------+
-
-Física:
-+--------+  +--------+  +--------+
-| página |  | página |  | página |
-+--------+  +--------+  +--------+
+hardware
+   |
+   v
+interrupt handler
+   |
+   v
+[event queue]
+   |
+   v
+consumer / FSM
 ```
 
-La contigüidad virtual no implica contigüidad física.
+La cola no necesita conocer el significado completo del evento. Su responsabilidad es transportar la representación acordada.
 
-La posibilidad de utilizar páginas grandes deberá quedar integrada en esta capa, pero no es necesario resolver todas sus reglas en la primera versión.
+Esto evita que una infraestructura central acumule reglas de todos los consumidores.
 
 ---
 
-## 6.7. Asignación de bloques
+### 4.2 Datos y primitivas reales antes que patrones de objetos
 
-Lua necesita asignar bloques de tamaños muy diferentes.
+El kernel debe preferir estructuras de datos, funciones y protocolos explícitos antes que jerarquías de objetos creadas para representar relaciones que pueden expresarse directamente.
 
-La memoria virtual y física trabajan naturalmente con páginas, pero las estructuras de alto nivel trabajan con objetos mucho menores.
-
-Por ello habrá una separación entre:
+Las herramientas principales son:
 
 ```text
-páginas
-    |
-    v
-regiones
-    |
-    v
-bloques
+structs
+unions
+Tagged Unions
+arrays
+ring buffers
+queues
+trees
+FSMs
+protocolos
+handshakes
 ```
 
-El asignador de bloques podrá utilizar regiones obtenidas desde la gestión de memoria virtual.
-
-TLSF es el mecanismo considerado para esta función.
-
-La elección concreta de cómo obtener, ampliar y liberar regiones queda abierta.
+Los patrones de diseño no se consideran una restricción arquitectónica. Si una solución puede expresarse directamente mediante datos + estado + funciones, no se necesita introducir una abstracción equivalente a un patrón orientado a objetos.
 
 ---
 
-# 7. Framebuffer y representación gráfica
+### 4.3 Estados explícitos
 
-Limine proporcionará un framebuffer lineal.
+Cuando un componente tiene estados relevantes, estos deben poder identificarse y sus transiciones deben ser definibles.
 
-El núcleo expondrá una operación básica para escribir píxeles en ese framebuffer.
+Una FSM es preferible cuando ayuda a hacer imposibles estados inválidos o a comprobar de forma directa el protocolo de un componente.
 
-La interfaz gráfica no escribirá directamente en el framebuffer para cada operación de dibujo.
+Ejemplo conceptual:
 
-En su lugar se utilizará un segundo buffer de memoria.
+```text
+RESET
+  |
+  v
+INITIALIZING
+  |
+  +---- error ----> FAILED
+  |
+  v
+READY
+  |
+  v
+RUNNING
+```
 
-El flujo será:
+No todo código necesita una FSM explícita. Una FSM se introduce cuando el estado y las transiciones son parte del comportamiento que se quiere controlar.
+
+---
+
+### 4.4 Ring buffers en caminos sensibles al tiempo
+
+Los caminos de hardware o streaming deben evitar allocations dinámicas cuando una estructura preasignada puede resolver el problema.
+
+Un ring buffer es una opción preferida para:
+
+* eventos de interrupción;
+* tracing;
+* comunicación producer/consumer;
+* buffers de entrada;
+* colas de trabajo pequeñas y predecibles.
+
+La preasignación permite que el camino crítico no dependa del estado del allocator.
+
+La localidad de memoria es una propiedad que debe medirse, no una garantía automática de usar un ring buffer.
+
+---
+
+### 4.5 Protocolos y handshakes
+
+Los componentes independientes deben comunicarse mediante contratos explícitos.
+
+Un protocolo debe describir al menos:
+
+```text
+qué entra
+qué sale
+qué estados existen
+qué transiciones son válidas
+qué ocurre ante error
+quién posee los datos
+cuándo termina una operación
+```
+
+Los protocolos de hardware, drivers, IPC y subsistemas internos pueden representarse mediante FSMs cuando su complejidad lo justifique.
+
+---
+
+### 4.6 Datagramas y Tagged Unions
+
+Cuando un evento debe atravesar varias capas, se prefiere una representación autocontenida y explícita.
+
+Ejemplo conceptual:
+
+```c
+typedef enum {
+    EVENT_KEYBOARD,
+    EVENT_TIMER,
+    EVENT_SYSCALL,
+    EVENT_PAGE_FAULT,
+} EventType;
+
+typedef struct {
+    EventType type;
+    union {
+        KeyboardEvent keyboard;
+        TimerEvent timer;
+        SyscallEvent syscall;
+        PageFaultEvent page_fault;
+    } data;
+} KernelEvent;
+```
+
+La unión etiquetada evita convertir un mensaje genérico en una estructura que contenga información irrelevante para casi todos los casos.
+
+Un mensaje autocontenido facilita el registro, las pruebas, la depuración y el paso de un evento entre componentes. No implica por sí solo transparencia de ubicación ni serialización automática.
+
+---
+
+### 4.7 Top Half / Bottom Half
+
+Las rutinas de interrupción deben hacer la cantidad mínima de trabajo necesaria para registrar el evento, reconocer el hardware y devolver el control.
+
+El trabajo complejo debe continuar fuera del contexto de interrupción.
+
+La forma conceptual preferida es:
+
+```text
+hardware
+   |
+   v
+Top Half / ISR
+   |
+   +--> read hardware state
+   +--> build event
+   +--> enqueue
+   +--> acknowledge
+   |
+   v
+return
+
+Bottom Half / worker
+   |
+   v
+FSM / subsystem / Lua
+```
+
+No se ejecutará Lua arbitrariamente desde una ISR.
+
+---
+
+### 4.8 Contratos antes que implementación
+
+Los componentes importantes se describirán mediante documentos tipo RFC, estados, invariantes y pruebas antes de crecer indefinidamente en código.
+
+La documentación debe responder al menos:
+
+```text
+qué hace
+por qué existe
+qué recibe
+qué produce
+qué puede fallar
+qué invariantes mantiene
+cómo se prueba
+```
+
+UML no se considera la representación principal del sistema. Los diagramas de estado, flujos de datos y contratos textuales son preferibles cuando expresan directamente el comportamiento relevante.
+
+---
+
+### 4.9 Verificación en capas
+
+Las pruebas deben ejecutarse en el nivel más barato que todavía pueda verificar la propiedad.
+
+```text
+host-side unit test
+        |
+        v
+kernel self-test
+        |
+        v
+integration test
+        |
+        v
+hardware / QEMU
+```
+
+Los tests host-side sirven para desarrollar estructuras y algoritmos rápidamente.
+
+Los tests internos verifican propiedades que dependen del ABI, memoria, interrupciones o entorno real del kernel.
+
+Ninguna de las dos categorías sustituye completamente a la otra.
+
+---
+
+### 4.10 Desarrollo V-Kanban
+
+La gobernanza macro seguirá una variante simple del Modelo en V y la ejecución cotidiana seguirá un flujo Kanban.
+
+```text
+RFC / contrato
+      |
+      v
+invariantes + casos de prueba
+      |
+      v
+implementación
+      |
+      v
+pruebas
+      |
+      v
+integración
+```
+
+Cada tarea de trabajo debe ser suficientemente pequeña como para tener un resultado observable. El backlog debe evitar tareas vagas como "trabajar en memoria" y reemplazarlas por resultados verificables.
+
+Cada commit importante debería dejar el sistema en un estado arrancable o, cuando se trate de componentes host-side, en un estado con tests reproducibles.
+
+---
+
+# 5. Arquitectura de memoria
+
+## 5.1. Estado actual
+
+El allocator actual ya utiliza un Buddy allocator y `kmalloc`/`kfree` operan sobre esa infraestructura.
+
+La función de esta capa es administrar bloques utilizables por el kernel. No debe confundirse con la futura gestión de regiones virtuales.
+
+La separación objetivo es:
+
+```text
+physical memory
+      |
+      v
+    Buddy
+      |
+      v
+virtual mappings
+      |
+      v
+     Area
+      |
+      v
+block allocator / kmalloc
+```
+
+El orden exacto entre VMM, Area y mecanismos de obtención de nuevas regiones se mantendrá ajustable durante la implementación.
+
+---
+
+## 5.2. Buddy allocator
+
+Buddy administra bloques de memoria cuyo tamaño sigue una potencia de dos.
+
+Su utilidad principal es obtener y devolver bloques físicos contiguos de manera sencilla y predecible.
+
+La unidad mínima prevista es una página de 4 KiB.
+
+Conceptualmente:
+
+```text
+order 0 = 4 KiB
+order 1 = 8 KiB
+order 2 = 16 KiB
+...
+```
+
+La implementación actual se considera infraestructura real, no una fase temporal que deba conservarse como ficción mientras se implementa otro allocator.
+
+---
+
+## 5.3. Memoria virtual y Area
+
+La memoria virtual debe separar:
+
+```text
+virtual address
+physical backing
+permissions
+lifetime / ownership
+```
+
+La abstracción `Area` se considera un candidato principal para representar regiones virtuales.
+
+Conceptualmente una `Area` puede describir:
+
+```text
+range
+permissions
+backing
+commit policy
+optional guards
+```
+
+El backing y la política de commit deben permanecer separados.
+
+Un backing describe de dónde provienen las páginas:
+
+```text
+anonymous
+file-backed
+shared
+MMIO
+```
+
+Una política de commit describe cuándo o cómo se obtiene respaldo físico.
+
+No deben multiplicarse enums para representar todas las combinaciones posibles.
+
+---
+
+## 5.4. Page fault y Areas
+
+La integración prevista de memoria virtual utiliza el page fault como una ruta de resolución, no necesariamente como un error fatal.
+
+Flujo conceptual:
+
+```text
+page fault
+    |
+    v
+find Area
+    |
+    +--> invalid permission? -> fault
+    |
+    +--> anonymous -> allocate
+    |
+    +--> file-backed -> load
+    |
+    +--> shared -> obtain backing
+    |
+    +--> MMIO -> map
+    |
+    v
+map page
+```
+
+La implementación concreta debe aparecer después de que PMM, page tables y representación de regiones estén suficientemente probados.
+
+---
+
+## 5.5. Páginas grandes y metadata agrupada
+
+Las páginas grandes y la metadata agrupada siguen siendo hipótesis a medir.
+
+No se asumirán mejoras solamente porque reduzcan el número de estructuras.
+
+Los experimentos deben medir al menos:
+
+```text
+metadata bytes
+allocation cost
+free cost
+fragmentation
+sharing cost
+split cost
+lookup cost
+```
+
+La decisión final debe venir de mediciones.
+
+---
+
+## 5.6. Asignación de bloques
+
+El allocator de bloques y el Buddy resuelven problemas diferentes.
+
+```text
+Buddy
+    -> bloques de memoria de granularidad física
+
+kmalloc
+    -> objetos y bloques de tamaños arbitrarios del kernel
+```
+
+Un allocator segregado o TLSF puede evaluarse posteriormente para allocations pequeñas y frecuentes, especialmente cuando Lua requiera mayor volumen de objetos pequeños.
+
+No se considera decidido sustituir inmediatamente el allocator actual por TLSF.
+
+---
+
+# 6. Tipos fundamentales
+
+Se está construyendo una base pequeña de tipos reutilizables antes de implementar drivers y protocolos más complejos.
+
+## Slice
+
+Un `Slice` representa una vista sobre una secuencia de elementos sin asumir ownership.
+
+Debe dejar explícitos al menos:
+
+```text
+pointer
+length
+```
+
+La representación exacta depende del tipo de dato y del ABI utilizado.
+
+## StringView
+
+`StringView` representa una vista no propietaria sobre texto y evita exigir terminación NUL en operaciones que solamente necesitan longitud + datos.
+
+Estas primitivas se utilizarán como base para parsers, drivers, protocolos y APIs internas donde copiar buffers no sea necesario.
+
+La regla es mantenerlas pequeñas y sin asumir ownership implícito.
+
+---
+
+# 7. Eventos, colas y tracing
+
+Los eventos del sistema deben poder transportarse mediante estructuras explícitas y colas preasignadas.
+
+Un posible flujo general es:
+
+```text
+producer
+   |
+   v
+KernelEvent
+   |
+   v
+ring buffer
+   |
+   v
+consumer
+```
+
+El mismo modelo puede utilizarse para teclado, timer, drivers y otras fuentes de eventos.
+
+## 7.1. Tracing nativo
+
+Evilos puede disponer de tracing dentro del kernel sin requerir un programa equivalente a `strace` ejecutándose en userland.
+
+El camino previsto es:
+
+```text
+syscall / exception / allocator / scheduler
+                |
+                v
+          TraceEvent
+                |
+                v
+        preallocated ring buffer
+                |
+                v
+      UART / framebuffer / Lua
+```
+
+El tracer no debe depender de allocations dinámicas en el camino que está intentando observar.
+
+Los eventos pueden representar, entre otros:
+
+```text
+syscall
+page fault
+page allocation
+scheduler event
+interrupt
+```
+
+Las estructuras de eventos deben evitar guardar punteros de memoria arbitrarios como si fueran referencias persistentes. Cuando la identidad de un recurso sea necesaria, debe preferirse un identificador estable o una copia limitada de datos.
+
+---
+
+# 8. Drivers y comunicación con hardware
+
+Los drivers deben mantener una frontera clara entre:
+
+```text
+hardware-specific mechanism
+        |
+        v
+event / protocol
+        |
+        v
+consumer
+```
+
+La ISR no debería implementar la lógica completa del dispositivo.
+
+Para cada driver se debe poder documentar:
+
+```text
+hardware state
+initialization states
+interrupt states
+commands
+responses
+error states
+```
+
+Cuando el protocolo sea suficientemente complejo, se representará como FSM.
+
+`Slice` y `StringView` se consideran primitivas reutilizables para los drivers que procesen buffers o estructuras de datos delimitadas.
+
+---
+
+# 9. Framebuffer y representación gráfica
+
+Limine proporciona un framebuffer lineal. El código gráfico debe escribir sobre un buffer controlado por el sistema y presentar el resultado cuando corresponda.
+
+Flujo conceptual:
 
 ```text
 Lua / UI
-    |
-    v
-primitivas gráficas
-    |
-    v
-buffer secundario
-    |
-    v
+   |
+   v
+graphics primitives
+   |
+   v
+backbuffer
+   |
+   v
 framebuffer
 ```
 
-Las operaciones de dibujo se realizarán sobre el buffer secundario.
+La biblioteca gráfica no debe conocer la política de ventanas, foco, buffers de edición o teclado.
 
-Posteriormente, el contenido necesario se copiará al framebuffer.
-
-La frecuencia de actualización no se considera todavía un requisito rígido. Inicialmente podrá utilizarse una frecuencia fija y posteriormente evaluarse si resulta conveniente modificarla.
-
-La representación del framebuffer deberá respetar las características proporcionadas por Limine, incluyendo tamaño de línea, resolución y formato de píxel.
+Su responsabilidad debe limitarse a primitivas gráficas, texto bitmap y operaciones necesarias para representar el resultado.
 
 ---
 
-# 8. Biblioteca gráfica
+# 10. Lua
 
-Se utilizará una biblioteca gráfica pequeña para evitar reimplementar primitivas básicas de dibujo.
+Lua se ejecutará dentro del espacio de direcciones del kernel.
 
-La biblioteca recibirá una operación de bajo nivel para escribir píxeles y utilizará esa operación para construir elementos gráficos superiores.
+C iniciará el runtime y proporcionará las operaciones que requieran acceso a mecanismos del kernel.
 
-La responsabilidad de la biblioteca será limitada a:
-
-* primitivas gráficas;
-* texto bitmap;
-* coordenadas;
-* elementos gráficos básicos.
-
-La organización de ventanas, buffers de interfaz y comportamiento de la interfaz no pertenecerá a esta capa.
-
----
-
-# 9. Lua
-
-## 9.1. Posición de Lua
-
-Lua se ejecutará dentro del espacio de direcciones del núcleo.
-
-El núcleo C iniciará la máquina virtual y proporcionará el mecanismo de memoria que utilizará Lua.
-
-Lua no tendrá acceso directo al hardware. Las operaciones de hardware estarán disponibles mediante funciones registradas desde C.
-
-Por ejemplo, una operación conceptual podrá ser:
+La frontera debe ser pequeña:
 
 ```text
 Lua
  |
  v
-función expuesta por C
+explicit C API
  |
  v
-driver o mecanismo del núcleo
+kernel mechanism
  |
  v
-hardware
+hardware / memory / events
 ```
+
+Lua no debe conocer estructuras internas que no necesite.
+
+Un error normal del runtime Lua puede aislarse como error del módulo o de la operación en curso. Esto no implica aislamiento frente a corrupción de memoria, bugs en C, punteros inválidos o fallos del propio kernel.
 
 ---
 
-## 9.2. API entre C y Lua
+# 11. Interfaz y modelo de ejecución
 
-La frontera entre C y Lua deberá ser pequeña.
+La interfaz seguirá un modelo de buffers y regiones rectangulares antes que un sistema de ventanas flotantes complejo.
 
-Cada función expuesta deberá representar una operación concreta del sistema.
+La UI y la shell serán candidatos naturales para Lua.
 
-La intención es evitar trasladar a Lua estructuras internas innecesarias.
-
-La interfaz deberá distinguir entre:
+La planificación inicial será cooperativa para las tareas Lua.
 
 ```text
-operaciones que modifican el estado del sistema
+Task A -> run -> yield
+Task B -> run -> yield
+Task C -> run -> yield
 ```
 
-y
+Un loop infinito que nunca hace `yield` puede bloquear el sistema cooperativo. Esa propiedad debe documentarse y probarse antes de considerar introducir preemption.
+
+El timer puede generar eventos y medir tiempo, pero no debe ejecutar Lua arbitrariamente desde una ISR.
+
+---
+
+# 12. Módulos
+
+La lógica de alto nivel se organizará como módulos Lua.
+
+La primera implementación puede cargar módulos embebidos. Posteriormente podrán cargarse desde filesystem sin cambiar necesariamente la interfaz conceptual de `require`.
+
+El loader debe distinguir entre:
 
 ```text
-datos que Lua puede inspeccionar
+module missing
+module load error
+module runtime error
+module success
 ```
 
-La forma definitiva de las funciones queda fuera de este documento.
+La modularidad es también una herramienta de diagnóstico: un fallo de Lua debe producir un estado observable que permita determinar qué módulo falló y en qué etapa.
 
 ---
 
-## 9.3. Memoria de Lua
+# 13. Modelo de fallos
 
-Lua deberá utilizar el sistema general de asignación de memoria del núcleo.
-
-Inicialmente podrá utilizarse un mecanismo sencillo.
-
-Posteriormente, el mismo punto de integración podrá utilizar la memoria administrada mediante regiones y TLSF.
-
-Esto permite que la evolución de la gestión de memoria no obligue a modificar el runtime de Lua.
-
----
-
-# 10. Módulos
-
-La mayor parte de la lógica de alto nivel se organizará como módulos Lua.
-
-Inicialmente los módulos podrán formar parte de la imagen del sistema. Posteriormente podrán obtenerse de un sistema de archivos.
-
-La interfaz conceptual deberá ser la misma en ambos casos.
-
-Los módulos previstos incluyen, entre otros:
+Evilos distingue al menos:
 
 ```text
-interfaz
-entrada
-shell
-planificación
-sistema de archivos
-red
+Lua error
+    -> error recuperable del módulo, cuando sea posible
+
+C error
+    -> puede comprometer el kernel
+
+memory / CPU fault
+    -> mecanismo propio de excepción
 ```
 
-La lista no es definitiva.
+El objetivo no es prometer aislamiento que el kernel todavía no posee.
 
-Un error Lua normal deberá poder ser tratado como error del módulo y no como un error irrecuperable del núcleo.
-
-Esto es posible para errores capturados por el runtime de Lua.
-
-No proporciona aislamiento frente a:
-
-* corrupción de memoria;
-* errores en código C;
-* accesos inválidos realizados desde funciones expuestas a Lua;
-* fallos del propio núcleo;
-* bucles que no cedan el control.
-
-Por tanto, el sistema no debe asumir que ejecutar un módulo Lua equivale a ejecutar un proceso aislado.
+La recuperación debe implementarse solamente donde el sistema pueda garantizar que el estado restante sigue siendo válido.
 
 ---
 
-# 11. Interfaz de usuario
+# 14. Desarrollo y evolución
 
-La interfaz se organizará alrededor de regiones rectangulares de contenido.
+La implementación debe evolucionar de forma incremental.
 
-No se requiere un sistema de ventanas flotantes en la primera etapa.
-
-El área principal podrá dividirse en varias regiones y cada región podrá contener texto, gráficos u otro contenido.
-
-El cálculo de la distribución podrá realizarse desde Lua.
-
-La capa gráfica solamente deberá recibir las coordenadas y operaciones necesarias para representar el resultado.
-
-La división física de la pantalla y la política utilizada para decidir qué región recibe el foco son problemas distintos y deberán mantenerse separados.
-
----
-
-# 12. Entrada de teclado
-
-El núcleo recibirá los eventos de entrada procedentes del hardware.
-
-Las interrupciones deberán realizar el trabajo mínimo necesario para registrar el evento.
-
-El procesamiento posterior podrá realizarse fuera del contexto de interrupción.
-
-Una posible secuencia es:
-
-```text
-hardware
-    |
-    v
-interrupción
-    |
-    v
-evento
-    |
-    v
-cola
-    |
-    v
-Lua
-```
-
-La forma exacta de la cola y del evento queda abierta.
-
----
-
-# 13. Línea de comandos y ejecución de Lua
-
-La interfaz reservará una región pequeña para mensajes del sistema y entrada de comandos.
-
-El usuario podrá introducir expresiones o código Lua y evaluarlo sin reiniciar el sistema.
-
-La ejecución deberá utilizar el mecanismo protegido del runtime para que un error del código introducido pueda convertirse en un mensaje y no necesariamente en la terminación del runtime.
-
-Esta capacidad será especialmente útil para inspeccionar y modificar el estado del sistema durante el desarrollo.
-
-No se considera necesario que toda operación del sistema sea modificable dinámicamente desde Lua.
-
----
-
-# 14. Planificación
-
-La primera etapa utilizará planificación cooperativa.
-
-Cada tarea Lua deberá ceder explícitamente el control.
-
-El planificador mantendrá una colección de tareas ejecutables y elegirá cuál continuar.
-
-Una forma conceptual es:
-
-```text
-tarea A
-    |
-    v
-resume
-    |
-    v
-yield
-
-tarea B
-    |
-    v
-resume
-    |
-    v
-yield
-```
-
-El timer del sistema podrá utilizarse para generar eventos y medir el tiempo.
-
-No se ejecutará código Lua arbitrario dentro del contexto de una interrupción.
-
-La planificación preventiva queda fuera del alcance inicial.
-
----
-
-# 15. Modelo de fallos
-
-El sistema debe distinguir entre distintos niveles de fallo.
-
-## 15.1. Error Lua
+Una nueva característica entra cuando resuelve una necesidad concreta de una capa existente o cuando existe un experimento explícito que justifica incorporarla.
 
 Ejemplo:
 
 ```text
-módulo
+Lua necesita memoria
     |
     v
-error()
+allocator
+    |
+    v
+regiones virtuales
+    |
+    v
+páginas
+    |
+    v
+PMM
 ```
 
-Resultado esperado:
+La arquitectura puede dejar espacio para NUMA, SMP, COW, zero-copy, filesystem avanzado u otros mecanismos sin implementarlos de antemano.
+
+Las optimizaciones deben seguir:
 
 ```text
-error del módulo
+hipótesis
+    |
+    v
+implementación mínima
+    |
+    v
+medición
+    |
+    v
+comparación
+    |
+    v
+decisión
 ```
-
-El resto del sistema puede continuar.
-
-## 15.2. Error en una función C
-
-Ejemplo:
-
-```text
-Lua
- |
- v
-función C
- |
- v
-acceso inválido
-```
-
-Resultado posible:
-
-```text
-fallo del núcleo
-```
-
-Este caso no se considera aislado.
-
-## 15.3. Error del hardware o de la gestión de memoria
-
-Estos errores pertenecen al núcleo y requieren mecanismos propios de manejo.
-
-No se presupone que Lua pueda recuperarse de ellos.
 
 ---
 
-# 16. Orden de desarrollo
+# 15. Cuestiones abiertas
 
-La arquitectura permite un desarrollo incremental.
+Siguen abiertas, entre otras:
 
-Una secuencia razonable es:
+1. La forma final de las `Area` y sus índices.
+2. Cómo se obtiene memoria física adicional desde el VMM.
+3. La política exacta de commit lazy/preallocated/guard.
+4. El comportamiento detallado de page faults recuperables.
+5. Si un allocator segregado o TLSF aporta ventajas suficientes sobre el allocator actual.
+6. La representación final de memoria compartida.
+7. El protocolo de eventos entre drivers y consumidores.
+8. La forma exacta del ring buffer genérico y sus reglas de ownership.
+9. El formato final de `TraceEvent`.
+10. La integración con ACPI más allá del descubrimiento inicial de RSDP.
+11. La forma de cargar módulos desde filesystem.
+12. Cuándo y cómo introducir planificación preventiva.
+13. SMP y estructuras por CPU.
+14. El valor real de páginas grandes y metadata agrupada después de medir.
+
+Estas decisiones deben resolverse cuando exista una necesidad concreta, una prueba o una medición que reduzca la incertidumbre.
+
+---
+
+# 16. Criterio de arquitectura
+
+Una decisión de diseño es aceptable cuando:
 
 ```text
-arranque
-  |
-  v
-salida mínima
-  |
-  v
-memoria inicial
-  |
-  v
-interrupciones
-  |
-  v
-framebuffer
-  |
-  v
-entrada
-  |
-  v
-Lua
-  |
-  v
-interfaz
-  |
-  v
-planificación cooperativa
-  |
-  v
-módulos
-  |
-  v
-memoria más completa
-  |
-  v
-filesystem
-  |
-  v
-red
+es explícita
+es pequeña
+es comprobable
+mantiene ownership claro
+no inventa requisitos futuros
+puede ser reemplazada sin arrastrar todo el sistema
 ```
 
-El orden exacto podrá cambiar según las dependencias observadas durante el desarrollo.
+Una abstracción debe justificarse por el problema que resuelve, no por la posibilidad de que algún día sea útil.
 
-La propiedad importante es que una solución inicial simple pueda sustituirse posteriormente sin cambiar las capas superiores.
+La infraestructura central debe permanecer sencilla y semánticamente limitada. Los consumidores deben ser responsables de interpretar los datos que reciben.
 
----
-
-# 17. Cuestiones abiertas
-
-Las siguientes cuestiones no quedan decididas por este RFC:
-
-1. Cuánta metadata debe existir por página de 4 KiB.
-2. Qué información puede asociarse a grupos de páginas.
-3. Cómo representar memoria compartida.
-4. Cómo dividir una página grande cuando algunas páginas pequeñas dejan de compartir sus propiedades.
-5. Cuándo utilizar páginas grandes.
-6. Cómo detectar y recuperar regiones que dejen de estar compartidas.
-7. Cómo obtener nuevas regiones para el asignador de bloques.
-8. Qué operaciones de hardware estarán expuestas a Lua.
-9. Cómo se almacenarán inicialmente los módulos Lua.
-10. Cuándo será necesario incorporar planificación preventiva.
-11. Qué mecanismos de recuperación se utilizarán ante excepciones del núcleo.
-12. Cómo se integrará ACPI posteriormente.
-13. Qué parte de la interfaz gráfica deberá permanecer en C y qué parte deberá pertenecer a Lua.
-
-Estas cuestiones deberán resolverse únicamente cuando exista una necesidad concreta o evidencia obtenida mediante pruebas.
+Ese criterio es deliberadamente más importante que utilizar una tecnología, patrón o estructura concreta.
 
 ---
 
-# 18. Principios de diseño
+# 17. Fuentes e inspiración
 
-El sistema seguirá unas pocas reglas simples:
-
-* Preferir una solución simple que funcione a una solución general que todavía no sea necesaria.
-* Mantener las capas separadas.
-* Evitar que las capas superiores dependan de detalles de hardware.
-* Evitar duplicar información sin una razón concreta.
-* No introducir aislamiento que el sistema todavía no necesita.
-* No introducir optimizaciones antes de conocer su coste real.
-* Mantener abiertas las partes que todavía no pueden decidirse con información suficiente.
-* Permitir que una implementación inicial pueda reemplazarse sin rediseñar todo el sistema.
-
-El objetivo no es definir todas las propiedades del sistema desde el principio. El objetivo es establecer suficientes límites para que las decisiones posteriores no entren en conflicto entre sí.
-
-
-# FUENTES (INSPIRACION?):
 * The Linux Programming Interface -- Michael Kerrisk
-* C Interfaces and Implementations -- David R_ Hanson -- 1996
-* Computer Systems_ A Programmer’s Perspective 3rd Edition -- Randal E_ Bryant, David R_ O’Hallaron -- 3, Global Edition, 2015 -- Pearson Education
-* Linux Kernel Development 3rd Edition
-* Little OS Book
-* Operating Systems - Internals and Design Principles 7th
-* What every computer scientist should know about floating-point arithmetic
-* Writing efficient programs (Bentley, Jon Louis)
-* Computer Systems A Programmer’s Perspective
-* Operating Systems: Design and Implementation, 3rd ed. Andrew S. Tanenbaum, and Albert S. Woodhull 
+* C Interfaces and Implementations -- David R. Hanson
+* Computer Systems: A Programmer's Perspective -- Randal E. Bryant, David R. O'Hallaron
+* Linux Kernel Development -- Robert Love
+* The Little OS Book
+* Operating Systems: Internals and Design Principles
+* Operating Systems: Design and Implementation -- Andrew S. Tanenbaum, Albert S. Woodhull
+* What Every Computer Scientist Should Know About Floating-Point Arithmetic
+* Writing Efficient Programs -- Jon Bentley
+
+Las fuentes son referencias para estudiar mecanismos y decisiones, no especificaciones que Evilos deba copiar.

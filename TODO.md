@@ -1,1660 +1,622 @@
-# Roadmap de implementación
+# Evilos - TODO
 
-## 0. Objetivo del roadmap
-
-Construir el sistema desde cero, empezando por un kernel mínimo que pueda arrancar, escribir en pantalla y responder a teclado, y terminar en un sistema experimental en el que Lua gestione gran parte de la lógica de alto nivel.
-
-El orden está diseñado para:
-
-* mantener una versión arrancable durante todo el desarrollo;
-* introducir una sola dependencia importante cada vez;
-* poder sustituir la gestión inicial de memoria posteriormente;
-* evitar implementar filesystem, red o SMP antes de que sean necesarios;
-* obtener una demostración útil lo antes posible.
-
-La implementación se divide en cuatro niveles:
-
-```text
-Nivel 1
-Arranque y kernel mínimo
-
-Nivel 2
-Memoria, entrada y gráficos
-
-Nivel 3
-Lua, interfaz y planificación
-
-Nivel 4
-Memoria completa, módulos, filesystem y red
-```
-
-Hay una quinta línea de trabajo opcional:
-
-```text
-Nivel 5
-Compartición de memoria, páginas grandes y paralelismo
-```
-
-No forma parte del primer sistema funcional.
+Roadmap operativa. Este archivo describe el estado actual y el siguiente trabajo útil. Las decisiones especulativas permanecen fuera del camino crítico.
 
 ---
 
-# 1. Fase 0: infraestructura del proyecto
-
-## Objetivo
-
-Poder compilar, enlazar, generar una imagen arrancable y ejecutarla repetidamente en QEMU o hardware real.
-
-## Tareas
-
-### Toolchain
-
-* [x] Elegir y fijar compilador C.
-* [x] Fijar assembler.
-* [x] Fijar linker.
-* [x] Establecer compilación freestanding.
-* [x] Desactivar dependencias accidentales de libc.
-* [x] Establecer flags de compilación para x86-64.
-* [x] Establecer flags de warnings estrictos.
-* [x] Separar flags de debug y release.
-* [x] Comprobar que el kernel no depende de código de userland.
-
-### Link
-
-* [x] Crear linker script.
-* [x] Definir sección de código.
-* [x] Definir sección de datos.
-* [x] Definir BSS.
-* [x] Exportar símbolos necesarios para localizar el kernel en memoria.
-* [x] Verificar ELF resultante.
-* [x] Comprobar alineamiento de las secciones.
-
-### Limine
-
-* [x] Fijar versión de Limine utilizada.
-* [x] Crear configuración mínima.
-* [x] Crear imagen arrancable.
-* [x] Arrancar desde QEMU.
-* [x] Arrancar desde hardware real cuando sea posible.
-* [x] Documentar exactamente qué deja preparado Limine.
-* [x] Registrar qué solicitudes del protocolo utiliza el kernel.
-
-### Debug
-
-* [x] Crear salida de diagnóstico temprana.
-* [x] Poder imprimir texto antes de tener framebuffer.
-* [x] Crear función de panic.
-* [x] Crear manejo de excepciones fatal.
-* [x] Imprimir al menos:
-
-  * [x] excepción;
-  * [x] código de error;
-  * [x] RIP;
-  * [x] RSP;
-  * [x] CR2 cuando corresponda.
-
-### Build reproducible
-
-* [x] Un solo comando debe producir la imagen arrancable.
-* [x] Un solo comando debe arrancar QEMU.
-* [x] Un comando debe limpiar artefactos.
-* [x] Documentar dependencias externas.
-
-## Terminado cuando
-
-```text
-build
-  ↓
-imagen
-  ↓
-QEMU
-  ↓
-kernel
-  ↓
-mensaje de arranque
-```
-
-funciona siempre.
-
----
-
-# 2. Fase 1: entrada del kernel y estado inicial
-
-## Objetivo
-
-Entender exactamente en qué estado recibe el control el kernel.
-
-No intentar todavía implementar el sistema de memoria completo.
-
-## Tareas
-
-### Entrada
-
-* [x] Crear punto de entrada del kernel.
-* [x] Crear stack inicial.
-* [x] Saltar a C.
-* [x] Verificar que las variables globales funcionan.
-* [x] Verificar que BSS está correctamente inicializado.
-
-### Limine
-
-* [x] Leer memory map.
-* [x] Imprimir todas sus entradas.
-* [x] Identificar memoria usable.
-* [x] Identificar memoria reservada.
-* [x] Identificar la región ocupada por el kernel.
-* [x] Identificar framebuffer.
-* [x] Registrar tamaño y formato del framebuffer.
-* [x] Obtener RSDP y conservar la información para más adelante.
-* [x] Decidir si se solicita también un mecanismo para acceder fácilmente a memoria física.
-
-Esta última decisión es importante antes del VMM. No hace falta resolverla ahora, pero sí dejarla explícita.
-
-### CPU
-
-* [x] Verificar modo de ejecución.
-* [x] Verificar CPUID disponible.
-* [x] Registrar características básicas de CPU.
-* [x] No depender todavía de extensiones opcionales.
-
-## Terminado cuando
-
-El kernel puede imprimir:
-
-```text
-CPU
-memory map
-kernel location
-framebuffer
-RSDP
-```
-
-y vuelve a un estado de espera sin corromperse.
-
----
-
-# 3. Fase 2: excepciones e interrupciones
-
-## Objetivo
-
-Tener control explícito sobre los eventos de CPU.
-
-## Tareas
-
-### GDT
-
-* [x] Crear GDT propia.
-* [x] Definir código de kernel.
-* [x] Definir datos de kernel.
-* [x] Recargar registros correspondientes.
-* [x] Verificar que la ejecución continúa.
-
-### IDT
-
-* [x] Crear IDT.
-* [x] Registrar excepciones CPU.
-* [x] Crear handlers para:
-
-  * [x] divide error;
-  * [x] invalid opcode;
-  * [x] general protection;
-  * [x] page fault;
-  * [x] double fault.
-* [x] Imprimir contexto de excepción.
-* [x] Detener el CPU de forma controlada después de un error fatal.
-
-### TSS
-
-* [x] Crear TSS.
-* [x] Configurar stack de excepción cuando sea necesario.
-* [x] Preparar una ruta segura para double fault.
-
-### Interrupciones externas
-
-* [ ] Inicializar controlador de interrupciones.
-* [ ] Habilitar interrupciones explícitamente.
-* [ ] Registrar una interrupción de prueba.
-* [ ] Crear contador de interrupciones.
-
-## Terminado cuando
-
-Una interrupción entra en C, se registra y retorna correctamente.
-
-Una excepción deliberadamente provocada produce un diagnóstico útil.
-
----
-
-# 4. Fase 3: memoria inicial
-
-## Objetivo
-
-Conseguir memoria dinámica sin implementar todavía PMM/VMM/TLSF.
-
-Esta fase existe para poder desarrollar lo demás.
-
-## Tareas
-
-### Reservas iniciales
-
-* [ ] Determinar regiones que nunca pueden reutilizarse.
-* [ ] Reservar memoria para estructuras del kernel.
-* [ ] Reservar memoria para framebuffer secundario.
-* [ ] Crear un mecanismo simple de asignación.
-
-El mecanismo inicial puede ser deliberadamente estúpido.
-
-Por ejemplo:
-
-```text
-memoria inicial
-      ↓
-puntero
-      ↓
-avanzar
-      ↓
-nueva reserva
-```
-
-No necesita `free`.
-
-### Pruebas
-
-* [ ] Reservar 1 byte.
-* [ ] Reservar 4 KiB.
-* [ ] Reservar un bloque grande.
-* [ ] Verificar alineamiento.
-* [ ] Escribir y leer memoria.
-* [ ] Intentar agotar el espacio disponible.
-* [ ] Informar correctamente de la falta de memoria.
-
-### Separación
-
-* [ ] Ocultar la implementación detrás de una interfaz pequeña.
-* [ ] No permitir que Lua conozca cómo funciona.
-* [ ] No permitir que la interfaz gráfica conozca cómo funciona.
-* [ ] Preparar el reemplazo futuro.
-
-## Terminado cuando
-
-El kernel puede solicitar memoria dinámica sin depender de libc.
-
----
-
-# 5. Fase 4: framebuffer y dibujo mínimo
-
-## Objetivo
-
-Conseguir una salida gráfica estable.
-
-Esta fase produce la primera recompensa visual del proyecto.
-
-## Tareas
-
-### Framebuffer
-
-* [ ] Leer dirección.
-* [ ] Leer pitch.
-* [ ] Leer ancho.
-* [ ] Leer alto.
-* [ ] Leer profundidad/formato.
-* [ ] Crear una función para escribir un píxel correctamente.
-* [ ] Probar todos los extremos de la pantalla.
-* [ ] Dibujar un patrón de prueba.
-
-### Buffer secundario
-
-* [ ] Reservar memoria para un buffer del mismo tamaño lógico.
-* [ ] Dibujar únicamente en el buffer secundario.
-* [ ] Copiar el buffer al framebuffer.
-* [ ] Medir tiempo de copia.
-* [ ] Verificar que no se producen errores al cambiar resolución.
-
-### Pruebas
-
-* [ ] píxel;
-* [ ] línea;
-* [ ] rectángulo;
-* [ ] pantalla completa;
-* [ ] texto bitmap mínimo.
-
-## Terminado cuando
-
-El sistema arranca y muestra una pantalla gráfica conocida sin utilizar todavía Lua.
-
----
-
-# 6. Fase 5: entrada de teclado
-
-## Objetivo
-
-Obtener eventos de teclado de forma controlada.
-
-## Tareas
-
-### Hardware
-
-* [ ] Inicializar controlador de teclado.
-* [ ] Recibir una tecla.
-* [ ] Decodificar scancode.
-* [ ] Diferenciar pulsación y liberación.
-* [ ] Mantener estado de Shift.
-* [ ] Mantener estado de Ctrl.
-* [ ] Mantener estado de Alt.
-* [ ] Manejar Enter.
-* [ ] Manejar Backspace.
-* [ ] Manejar Escape.
-
-### Eventos
-
-* [ ] Definir representación de un evento de teclado.
-* [ ] Separar recepción de hardware y procesamiento.
-* [ ] Crear cola de eventos.
-* [ ] Probar overflow de la cola.
-
-### Depuración
-
-* [ ] Mostrar eventos recibidos en pantalla.
-* [ ] Verificar todas las teclas utilizadas por la interfaz.
-
-## Terminado cuando
-
-Se puede escribir texto en la pantalla utilizando exclusivamente eventos generados por el teclado.
-
----
-
-# 7. Fase 6: reloj y tiempo
-
-## Objetivo
-
-Tener una fuente de tiempo antes de implementar planificación.
-
-## Tareas
-
-* [ ] Inicializar timer.
-* [ ] Generar ticks.
-* [ ] Incrementar contador monotónico.
-* [ ] Exponer lectura del tiempo.
-* [ ] Medir intervalos.
-* [ ] Crear espera básica.
-* [ ] Verificar que una interrupción periódica funciona.
-
-No implementar todavía un scheduler.
-
-## Terminado cuando
-
-El kernel puede decir:
-
-```text
-tick = N
-```
-
-y el valor avanza correctamente.
-
----
-
-# 8. Fase 7: libc mínima para código freestanding
-
-## Objetivo
-
-Permitir compilar componentes complejos sin introducir una libc de sistema completa.
-
-## Tareas
-
-* [ ] Compilar el código que deberá ejecutarse en el kernel.
-* [ ] Registrar símbolos faltantes.
-* [ ] Implementar únicamente las funciones realmente necesarias.
-* [ ] Revisar:
-
-  * [ ] memcpy;
-  * [ ] memmove;
-  * [ ] memset;
-  * [ ] memcmp;
-  * [ ] strlen;
-  * [ ] funciones de strings necesarias;
-  * [ ] operaciones numéricas necesarias.
-* [ ] Evitar implementar funciones que todavía nadie utiliza.
-
-### Regla
-
-Cuando aparezca una dependencia:
-
-```text
-undefined reference
-       ↓
-¿realmente se necesita?
-       ↓
-sí → implementar
-no → eliminar dependencia
-```
-
-No construir una libc entera porque el linker te haya mirado feo.
-
-## Terminado cuando
-
-Los componentes necesarios para Lua pueden enlazarse sin depender de un sistema operativo existente.
-
----
-
-# 9. Fase 8: integrar Lua mínimo
-
-## Objetivo
-
-Arrancar Lua dentro del kernel.
-
-Esta es la primera gran integración vertical.
-
-## Tareas
-
-### Incorporación
-
-* [ ] Incorporar el código fuente de Lua.
-* [ ] Configurar compilación freestanding.
-* [ ] Eliminar dependencias del host que no sean apropiadas.
-* [ ] Resolver funciones C requeridas.
-* [ ] Crear estado Lua.
-
-### Memoria
-
-* [ ] Conectar allocator de Lua a la memoria inicial.
-* [ ] Probar alloc.
-* [ ] Probar free.
-* [ ] Probar realloc.
-* [ ] Agotar memoria deliberadamente.
-* [ ] Comprobar que Lua informa el fallo.
-
-### Código
-
-* [ ] Ejecutar una expresión sencilla.
-* [ ] Ejecutar un archivo o bloque embebido.
-* [ ] Obtener resultados.
-* [ ] Mostrar errores Lua.
-
-### Biblioteca estándar
-
-* [ ] Identificar qué partes de la biblioteca estándar son utilizables.
-* [ ] Abrir solamente las bibliotecas necesarias.
-* [ ] Evitar dependencias accidentales de `io`, `os` y equivalentes que dependan del host.
-
-## Terminado cuando
-
-El kernel hace:
-
-```text
-crear lua_State
-     ↓
-ejecutar código Lua
-     ↓
-obtener resultado
-     ↓
-mostrar resultado
-```
-
----
-
-# 10. Fase 9: frontera C ↔ Lua
-
-## Objetivo
-
-Permitir que Lua utilice mecanismos del kernel.
-
-## Tareas
-
-### Primeras funciones
-
-Exponer unas pocas operaciones:
-
-* [ ] dibujar píxel;
-* [ ] dibujar primitivas;
-* [ ] leer tiempo;
-* [ ] obtener evento;
-* [ ] imprimir texto;
-* [ ] provocar una espera;
-* [ ] consultar memoria.
-
-No exponer todavía estructuras internas del kernel.
-
-### Pruebas
-
-* [ ] Lua dibuja un píxel.
-* [ ] Lua dibuja un rectángulo.
-* [ ] Lua lee el tiempo.
-* [ ] Lua recibe un evento.
-* [ ] Lua imprime texto.
-
-### Errores
-
-* [ ] Probar argumentos inválidos.
-* [ ] Probar número incorrecto de argumentos.
-* [ ] Probar punteros inválidos en APIs C.
-* [ ] Definir qué errores regresan a Lua.
-* [ ] No ejecutar operaciones peligrosas desde una función C sin validación.
-
-## Terminado cuando
-
-Una parte visible del sistema puede escribirse en Lua.
-
----
-
-# 11. Fase 10: µGUI
-
-## Objetivo
-
-Mover las primitivas gráficas superiores fuera del código gráfico propio.
-
-## Tareas
-
-* [ ] Integrar la biblioteca gráfica.
-* [ ] Conectar su salida de píxel.
-* [ ] Ejecutar pruebas independientes de sus primitivas.
-* [ ] Dibujar líneas.
-* [ ] Dibujar rectángulos.
-* [ ] Dibujar texto.
-* [ ] Dibujar elementos desde Lua.
-
-### Separación
-
-La biblioteca no debe saber:
-
-```text
-qué es una ventana
-qué es un buffer
-qué es el foco
-qué es el teclado
-```
-
-Solo debe dibujar.
-
-## Terminado cuando
-
-Lua puede producir una interfaz estática completa sin necesidad de modificar el código C gráfico.
-
----
-
-# 12. Fase 11: buffers e interfaz
-
-## Objetivo
-
-Construir la interfaz descrita en el RFC.
-
-## Tareas
-
-### Buffer
-
-* [ ] Definir qué representa un buffer.
-* [ ] Crear uno.
-* [ ] Dibujar su contenido.
-* [ ] Asignarle una región.
-* [ ] Redibujarlo.
-
-### División
-
-* [ ] Dividir pantalla en regiones.
-* [ ] Dibujar divisores.
-* [ ] Permitir múltiples regiones.
-* [ ] Cambiar el tamaño de una región.
-* [ ] Redibujar después del cambio.
-
-### Foco
-
-* [ ] Mantener buffer activo.
-* [ ] Cambiar foco.
-* [ ] Asociar teclado con buffer activo.
-
-### Teclas
-
-* [ ] h
-* [ ] j
-* [ ] k
-* [ ] l
-* [ ] Escape
-* [ ] :
-* [ ] Enter
-* [ ] Backspace
-
-## Terminado cuando
-
-Existe una interfaz utilizable aunque todavía no tenga filesystem ni red.
-
----
-
-# 13. Fase 12: minibuffer y evaluación Lua
-
-## Objetivo
-
-Poder modificar el sistema sin recompilar.
-
-## Tareas
-
-* [ ] Reservar región inferior.
-* [ ] Implementar línea de entrada.
-* [ ] Implementar edición básica.
-* [ ] Leer comando.
-* [ ] Pasar string al parser Lua.
-* [ ] Ejecutar código.
-* [ ] Capturar error.
-* [ ] Mostrar resultado.
-* [ ] Mantener el sistema ejecutándose después de un error.
-
-### Pruebas
-
-Ejecutar desde el minibuffer operaciones como:
-
-```lua
-print(...)
-```
-
-y
-
-```lua
-some_function()
-```
-
-además de modificar variables visibles en la interfaz.
-
-## Terminado cuando
-
-El sistema permite observar y cambiar su estado mediante Lua durante la ejecución.
-
----
-
-# 14. Fase 13: planificación cooperativa
-
-## Objetivo
-
-Ejecutar varios componentes Lua sin requerir todavía multitarea preventiva.
-
-## Tareas
-
-### Coroutines
-
-* [ ] Crear una coroutine.
-* [ ] Reanudarla.
-* [ ] Hacer yield.
-* [ ] Detectar terminación.
-* [ ] Detectar error.
-
-### Scheduler
-
-* [ ] Mantener lista de tareas.
-* [ ] Seleccionar siguiente tarea.
-* [ ] Reanudar tarea.
-* [ ] Detectar yield.
-* [ ] Reprogramar tarea.
-* [ ] Eliminar tarea terminada.
-
-### Integración
-
-Crear tareas para:
-
-* [ ] teclado;
-* [ ] interfaz;
-* [ ] renderizado;
-* [ ] shell.
-
-### Timer
-
-* [ ] Asociar espera con ticks.
-* [ ] Despertar tareas.
-* [ ] No ejecutar Lua desde una ISR.
-
-## Prueba importante
-
-Crear:
-
-```lua
-taskA()
-taskB()
-taskC()
-```
-
-y verificar que todas progresan.
-
-Después crear deliberadamente:
-
-```lua
-while true do
-end
-```
-
-y comprobar que el sistema efectivamente queda bloqueado.
-
-Eso no es un bug que haya que "arreglar" todavía. Es una propiedad del modelo cooperativo que hay que documentar.
-
-## Terminado cuando
-
-Múltiples tareas Lua funcionan y ceden voluntariamente el control.
-
----
-
-# 15. Fase 14: PMM básico
-
-Hasta aquí el sistema ya es una demo.
-
-Ahora empieza la segunda etapa del proyecto: reemplazar progresivamente las soluciones temporales.
-
-## Objetivo
-
-Administrar páginas físicas reales.
-
-## Tareas
-
-### Memory map
-
-* [ ] Parsear todas las regiones.
-* [ ] Ignorar regiones reservadas.
-* [ ] Reservar memoria ocupada por kernel.
-* [ ] Reservar memoria usada por módulos.
-* [ ] Reservar estructuras iniciales.
-* [ ] Reservar framebuffer.
-* [ ] Identificar regiones recuperables posteriormente.
-
-### Páginas
-
-* [ ] Elegir unidad básica.
-* [ ] Crear estado libre/ocupado.
-* [ ] Implementar asignación.
-* [ ] Implementar liberación.
-* [ ] Probar agotamiento.
-* [ ] Probar reutilización.
-
-### Instrumentación
-
-* [ ] Contar páginas libres.
-* [ ] Contar páginas ocupadas.
-* [ ] Medir fragmentación.
-* [ ] Medir coste de alloc/free.
-
-## Terminado cuando
-
-El kernel puede pedir y devolver páginas físicas independientemente de la implementación inicial.
-
----
-
-# 16. Fase 15: VMM
-
-## Objetivo
-
-Separar memoria virtual de memoria física.
-
-## Tareas
-
-### Page tables
-
-* [ ] Crear estructuras propias.
-* [ ] Mapear una página.
-* [ ] Desmapear una página.
-* [ ] Cambiar permisos.
-* [ ] Provocar page fault deliberado.
-* [ ] Interpretar CR2.
-* [ ] Liberar mapping.
-
-### Regiones
-
-* [ ] Reservar rango virtual.
-* [ ] Mapear memoria física.
-* [ ] Liberar rango.
-* [ ] Permitir regiones no físicamente contiguas.
-
-### Primera integración
-
-Reemplazar progresivamente la memoria inicial del kernel.
-
-No migrar todo de una vez.
-
-Primero:
-
-```text
-alguna estructura
-```
-
-después:
-
-```text
-Lua
-```
-
-y finalmente:
-
-```text
-resto del sistema
-```
-
-## Terminado cuando
-
-Una región virtual continua puede utilizar páginas físicas independientes.
-
----
-
-# 17. Fase 16: experimentar con páginas grandes
-
-Esta fase existe específicamente para comprobar tu hipótesis.
-
-No asumir que la hipótesis es correcta.
-
-## Experimento A: metadata por página
-
-Implementar una representación sencilla en la que cada página pequeña tenga la información que necesita.
-
-Medir:
-
-* [ ] memoria utilizada por metadata;
-* [ ] tiempo de búsqueda;
-* [ ] alloc;
-* [ ] free;
-* [ ] operaciones de referencia.
-
-## Experimento B: metadata agrupada
-
-Agrupar información en unidades mayores.
-
-Medir exactamente lo mismo.
-
-## Experimento C: mezcla
-
-Permitir:
-
-```text
-grupo grande
-   |
-   +-- páginas pequeñas
-   +-- páginas pequeñas
-   +-- páginas pequeñas
-```
-
-y reservar metadata adicional solamente cuando una unidad necesite propiedades especiales.
-
-## Medir
-
-* [ ] bytes de metadata por GiB administrado;
-* [ ] coste de alloc;
-* [ ] coste de free;
-* [ ] coste de sharing;
-* [ ] coste de dividir una región;
-* [ ] coste de reconstruir metadata;
-* [ ] coste de concurrencia;
-* [ ] fragmentación.
-
-## Resultado esperado
-
-No es "hacer páginas grandes".
-
-El resultado esperado es:
-
-```text
-hipótesis
-   ↓
-implementación A
-   ↓
-medición
-   ↓
-implementación B
-   ↓
-medición
-   ↓
-decisión
-```
-
-Puede perfectamente concluir que parte de la hipótesis no compensa.
-
----
-
-# 18. Fase 17: TLSF
-
-## Objetivo
-
-Agregar asignación eficiente de bloques pequeños.
-
-## Tareas
-
-* [ ] Crear pool.
-* [ ] Conectar pool a regiones virtuales.
-* [ ] Implementar alloc.
-* [ ] Implementar free.
-* [ ] Implementar realloc.
-* [ ] Probar tamaños pequeños.
-* [ ] Probar tamaños grandes.
-* [ ] Probar muchos alloc/free.
-* [ ] Probar fragmentación.
-* [ ] Medir coste.
-
-### Integración Lua
-
-* [ ] Reemplazar allocator temporal de Lua.
-* [ ] Verificar todas las operaciones.
-* [ ] Forzar agotamiento.
-* [ ] Liberar memoria repetidamente.
-* [ ] Verificar que no existen fugas.
-
-## Terminado cuando
-
-Lua utiliza:
-
-```text
-PMM
-  ↓
-VMM
-  ↓
-regiones
-  ↓
-TLSF
-  ↓
-lua allocator
-```
-
-sin conocer los detalles de ninguna capa.
-
----
-
-# 19. Fase 18: módulo Lua
-
-## Objetivo
-
-Separar el código Lua en componentes cargables.
-
-## Primera versión
-
-No implementar todavía filesystem.
-
-## Tareas
-
-* [ ] Crear loader para módulos embebidos.
-* [ ] Registrar módulos disponibles.
-* [ ] Implementar `require`.
-* [ ] Cargar módulo.
-* [ ] Ejecutarlo una vez.
-* [ ] Cachearlo.
-* [ ] Detectar módulo inexistente.
-* [ ] Detectar error durante carga.
-* [ ] Detectar dependencia circular.
-
-### Dividir progresivamente
-
-Mover a módulos:
-
-* [ ] interfaz;
-* [ ] teclado;
-* [ ] scheduler;
-* [ ] shell;
-* [ ] memoria;
-* [ ] pruebas.
-
-## Terminado cuando
-
-La interfaz y el scheduler no dependen de un único archivo Lua gigante.
-
----
-
-# 20. Fase 19: filesystem mínimo
-
-## Objetivo
-
-Permitir que los módulos dejen de estar necesariamente embebidos.
-
-No intentar hacer un filesystem completo del mundo.
-
-## Primera etapa
-
-* [ ] Elegir medio inicial.
-* [ ] Crear acceso a sectores/bloques.
-* [ ] Leer un bloque.
-* [ ] Escribir un bloque.
-* [ ] Implementar estructura mínima de almacenamiento.
-* [ ] Crear archivo.
-* [ ] Leer archivo.
-* [ ] Escribir archivo.
-* [ ] Listar archivos.
-* [ ] Eliminar archivo.
-
-### Integración con Lua
-
-* [ ] Loader de módulos desde filesystem.
-* [ ] `require()` puede encontrar módulos en almacenamiento.
-* [ ] Manejar archivo inexistente.
-* [ ] Manejar corrupción.
-* [ ] Manejar tamaño incorrecto.
-
-## Terminado cuando
-
-El sistema puede arrancar con módulos Lua almacenados fuera del binario.
-
----
-
-# 21. Fase 20: manejo de errores de módulos
-
-## Objetivo
-
-Comprobar realmente la propiedad:
-
-```text
-error en módulo
-    ≠
-error del kernel
-```
-
-## Tareas
-
-Crear deliberadamente módulos que:
-
-* [ ] llamen `error`;
-* [ ] reciban argumentos incorrectos;
-* [ ] fallen durante `require`;
-* [ ] fallen después de estar cargados;
-* [ ] devuelvan datos incorrectos.
-
-Comprobar que:
-
-```text
-módulo
-   ↓
-error protegido
-   ↓
-mensaje
-   ↓
-módulo detenido
-   ↓
-resto del sistema sigue
-```
-
-Después probar un fallo en C y documentar la diferencia.
-
-Esto debería formar parte de la documentación, porque es una propiedad importante del diseño.
-
----
-
-# 22. Fase 21: red
-
-La red debería empezar cuando filesystem, memoria y planificación ya funcionen.
-
-## Orden
-
-### Buffers
-
-* [ ] Representar paquete.
-* [ ] Crear buffer.
-* [ ] Liberar buffer.
-* [ ] Compartir buffer internamente.
-* [ ] Evitar copias innecesarias donde no hagan falta.
-
-### Ethernet
-
-* [ ] Driver de NIC de prueba.
-* [ ] Recibir trama.
-* [ ] Enviar trama.
-* [ ] Verificar checksum cuando corresponda.
-* [ ] Manejar tamaño máximo.
-
-### Protocolos
-
-Implementar solamente los necesarios, en este orden:
-
-* [ ] Ethernet;
-* [ ] ARP;
-* [ ] IPv4;
-* [ ] ICMP;
-* [ ] UDP;
-* [ ] TCP, solamente si realmente hace falta.
-
-### Primera aplicación
-
-Antes de construir infraestructura compleja:
-
-* [ ] ping;
-* [ ] servidor simple;
-* [ ] cliente simple.
-
-Después:
-
-* [ ] HTTP;
-* [ ] otros servicios.
-
----
-
-# 23. Fase 22: compartir memoria y zero-copy
-
-Esta fase no debe comenzar hasta que la representación básica de memoria funcione.
-
-## Objetivo
-
-Comprobar qué partes de la hipótesis de páginas grandes y metadata compartida son realmente útiles.
-
-## Tareas
-
-* [ ] Definir cuándo una región puede ser compartida.
-* [ ] Representar referencias.
-* [ ] Compartir una página.
-* [ ] Hacer que dos consumidores lean la misma memoria.
-* [ ] Detectar cuándo ya no quedan consumidores.
-* [ ] Liberarla.
-* [ ] Medir copia frente a compartir.
-* [ ] Aplicarlo a buffers de red.
-* [ ] Aplicarlo a buffers gráficos cuando sea razonable.
-
-Después comprobar:
-
-```text
-buffer
-  ↓
-productor
-  ↓
-consumidor
-```
-
-sin copiar el contenido innecesariamente.
-
----
-
-# 24. Fase 23: paralelismo
-
-No comenzar antes de que el sistema funcione correctamente en un solo CPU.
-
-## Tareas
-
-### CPU adicionales
-
-* [ ] Detectar CPUs.
-* [ ] Arrancar CPU adicional.
-* [ ] Darle stack.
-* [ ] Verificar ejecución independiente.
-* [ ] Detener CPU sin usar.
-
-### Estado por CPU
-
-Identificar qué estructuras son:
-
-```text
-globales
-```
-
-y cuáles deben ser:
-
-```text
-por CPU
-```
-
-### Memoria
-
-* [ ] Hacer allocations desde CPU diferentes.
-* [ ] Detectar accesos simultáneos.
-* [ ] Proteger estructuras compartidas.
-* [ ] Medir contención.
-
-### Scheduler
-
-* [ ] Ejecutar tareas en distintos CPU.
-* [ ] Compartir estado.
-* [ ] Mover tareas cuando sea necesario.
-
-## Solamente después
-
-Investigar:
-
-* [ ] pools por CPU;
-* [ ] estructuras de metadata agrupadas;
-* [ ] asignación local;
-* [ ] sharing entre CPU.
-
----
-
-# 25. Fase 24: mejorar la memoria después de tener datos
-
-Esta fase es deliberadamente posterior.
-
-Aquí se toman las decisiones que durante las primeras fases fueron solamente hipótesis.
-
-## Preguntas
-
-* [ ] ¿Cuánta RAM ocupa realmente metadata?
-* [ ] ¿Cuánto cuesta buscar una página?
-* [ ] ¿Cuánto cuesta compartirla?
-* [ ] ¿Cuánto cuesta liberar una región?
-* [ ] ¿Las páginas grandes simplifican algo realmente?
-* [ ] ¿Cuánto ayudan?
-* [ ] ¿Dónde complican las cosas?
-* [ ] ¿Conviene metadata por página?
-* [ ] ¿Conviene metadata por grupo?
-* [ ] ¿Conviene tener ambas?
-* [ ] ¿Qué cambia cuando hay varios CPU?
-
-El resultado debe ser una implementación basada en mediciones, no una decisión tomada porque "Linux también lo hace".
-
----
-
-# 26. Fase 25: estabilización
-
-## Arranque
-
-* [ ] Arranque repetido miles de veces.
-* [ ] Arranque con distintas cantidades de RAM.
-* [ ] Arranque con distintos framebuffers.
-* [ ] Arranque sin módulos opcionales.
+# 0. Estado actual
+
+## Kernel / boot
+
+- [x] Limine v11
+- [x] Entrada x86-64
+- [x] C runtime freestanding básico
+- [x] UART
+- [x] Framebuffer
+- [x] Flanterm
+- [x] Memory map
+- [x] HHDM
+- [x] Kernel physical/virtual address
+- [x] ACPI RSDP discovery
+
+## CPU / exceptions
+
+- [x] GDT
+- [x] IDT
+- [x] TSS
+- [ ] Verificar exhaustivamente handlers de excepciones
+- [ ] Probar #DE
+- [ ] Probar #UD
+- [ ] Probar #GP
+- [ ] Probar #PF
+- [ ] Probar double fault de forma controlada
+- [ ] Diagnóstico uniforme de registros y contexto
 
 ## Memoria
 
-* [ ] Exhaustión de memoria.
-* [ ] Muchas allocations.
-* [ ] Muchos frees.
-* [ ] Fragmentación.
-* [ ] page faults.
-* [ ] corrupción deliberada.
+- [x] Buddy allocator
+- [x] `kmalloc`
+- [x] `kfree`
+- [x] Smoke test de allocation/free
+- [ ] Suite de stress del allocator
+- [ ] Medir fragmentación
+- [ ] Probar split/coalescing/reutilización de bloques
+- [ ] Definir contrato de ownership
 
-## Lua
+## Primitivas comunes
 
-* [ ] error de sintaxis.
-* [ ] error de ejecución.
-* [ ] falta de memoria.
-* [ ] módulo inexistente.
-* [ ] módulo corrupto.
-* [ ] coroutine terminada.
-* [ ] coroutine bloqueada.
+- [x] Slice
+- [x] StringView
+- [ ] Revisar API y ownership
+- [ ] Añadir tests exhaustivos
+- [ ] Documentar invariantes
 
-## Interfaz
+## Tests
 
-* [ ] teclado rápido.
-* [ ] cambio rápido de buffers.
-* [ ] resize.
-* [ ] redibujado continuo.
-* [ ] comandos largos.
-* [ ] comandos inválidos.
-
-## Scheduler
-
-* [ ] tarea que termina.
-* [ ] tarea que genera error.
-* [ ] tarea que nunca yield.
-* [ ] muchas tareas.
-* [ ] tarea bloqueada esperando evento.
+- [x] Unit tests host-side
+- [x] Ejecutar algoritmos/primitivas desde el host
+- [ ] Añadir self-tests dentro del kernel
+- [ ] Unificar convención de nombres y resultado de tests
+- [ ] Separar unit, integration y self-test
 
 ---
 
-# 27. Fase 26: documentación
+# 1. Prioridad inmediata: hacer confiable lo que ya existe
 
-No dejar esto para el final.
+## 1.1. Buddy / kmalloc
 
-## Documentar
+- [ ] Allocation de tamaños pequeños
+- [ ] Allocation de tamaños grandes
+- [ ] Múltiples allocations simultáneas
+- [ ] Free en distinto orden
+- [ ] Reutilización de bloques
+- [ ] Split de bloques
+- [ ] Coalescing con buddy libre
+- [ ] Agotamiento deliberado
+- [ ] Alineamiento
+- [ ] Estadísticas de uso
+- [ ] Tests de fragmentación
+- [ ] Tests de doble free / free inválido, según el contrato elegido
 
-* [ ] cómo compilar;
-* [ ] cómo arrancar;
-* [ ] estado inicial de CPU;
-* [ ] memory map;
-* [ ] modelo de memoria;
-* [ ] framebuffer;
-* [ ] interrupciones;
-* [ ] teclado;
-* [ ] Lua;
-* [ ] API C/Lua;
-* [ ] scheduler;
-* [ ] módulos;
-* [ ] filesystem;
-* [ ] red;
-* [ ] decisiones descartadas;
-* [ ] resultados de experimentos.
+## 1.2. Slice / StringView
 
-Para la memoria, especialmente:
+- [ ] Slice vacío
+- [ ] Slice completo
+- [ ] Sub-slice
+- [ ] Límites
+- [ ] Length 0
+- [ ] StringView con NUL
+- [ ] StringView sin NUL
+- [ ] Comparación
+- [ ] Búsqueda simple
+- [ ] Conversión controlada a C string cuando sea necesario
+- [ ] Verificar que no introduzcan ownership implícito
 
-```text
-hipótesis
-→ implementación
-→ medición
-→ resultado
-→ decisión
-```
+## 1.3. Excepciones
 
-Guardar los resultados aunque la hipótesis resulte incorrecta.
-
-Eso convierte una optimización fallida en información en lugar de simplemente esconder un cadáver detrás de un commit.
-
----
-
-# 28. Hitos principales
-
-## Hito 1: kernel arrancable
-
-Debe poder:
-
-```text
-Limine
-  ↓
-C
-  ↓
-diagnóstico
-```
-
-Incluye:
-
-* [ ] build;
-* [ ] linker;
-* [ ] entrada;
-* [ ] memory map;
-* [ ] panic;
-* [ ] excepciones.
+- [ ] Definir frame de excepción común
+- [ ] Imprimir vector
+- [ ] Imprimir error code cuando exista
+- [ ] Imprimir RIP/RSP/RFLAGS
+- [ ] Imprimir CR2 para #PF
+- [ ] Test deliberado por excepción
+- [ ] Mantener panic path sin allocation dinámica
 
 ---
 
-## Hito 2: kernel interactivo
+# 2. Infraestructura de eventos
 
-Debe poder:
+La siguiente unidad arquitectónica es un camino común para eventos del kernel.
 
-```text
-keyboard
-   ↓
-events
-   ↓
-screen
-```
+## 2.1. Event types
 
-Incluye:
+- [ ] Definir `EventType`
+- [ ] Definir eventos de teclado
+- [ ] Definir eventos de timer
+- [ ] Definir eventos de hardware
+- [ ] Definir eventos de syscall
+- [ ] Definir eventos de page fault
+- [ ] Usar Tagged Unions donde corresponda
+- [ ] Evitar un `God Event` con campos irrelevantes
 
-* [ ] interrupciones;
-* [ ] timer;
-* [ ] teclado;
-* [ ] framebuffer;
-* [ ] buffer secundario.
+## 2.2. Ring buffer
 
----
+- [ ] Diseñar ring buffer fijo/preasignado
+- [ ] Definir producer/consumer ownership
+- [ ] Definir comportamiento ante overflow
+- [ ] Definir si es SPSC, MPSC o restringir el primer diseño
+- [ ] Tests host-side
+- [ ] Self-tests del kernel
+- [ ] Medir coste
 
-## Hito 3: Lua arrancado
+## 2.3. ISR / Bottom Half
 
-Debe poder:
-
-```text
-kernel
-   ↓
-Lua
-   ↓
-script
-   ↓
-resultado
-```
-
-Incluye:
-
-* [ ] allocator temporal;
-* [ ] Lua;
-* [ ] ejecución;
-* [ ] errores;
-* [ ] funciones C.
+- [ ] Definir trabajo mínimo de ISR
+- [ ] Enqueue de evento desde ISR
+- [ ] Ack del hardware
+- [ ] Procesamiento fuera de ISR
+- [ ] Crear una primera ruta hardware -> evento -> consumer
+- [ ] Verificar que Lua no se ejecuta desde ISR
 
 ---
 
-## Hito 4: sistema Lua visible
+# 3. Tracing nativo
 
-Debe poder:
+El tracing será parte de la observabilidad del kernel, no una dependencia de userland.
 
-```text
-Lua
- ├── UI
- ├── keyboard
- ├── shell
- └── scheduler
-```
-
-Incluye:
-
-* [ ] µGUI;
-* [ ] buffers;
-* [ ] foco;
-* [ ] minibuffer;
-* [ ] evaluación interactiva;
-* [ ] coroutines.
-
-Este es el primer punto donde ya tienes una demostración interesante.
+- [ ] Definir `TraceEventType`
+- [ ] Definir `TraceEvent`
+- [ ] Incluir timestamp
+- [ ] Incluir thread/process identity cuando exista
+- [ ] Incluir syscall ID cuando corresponda
+- [ ] Evitar punteros persistentes a memoria de procesos
+- [ ] Preasignar ring buffer de tracing
+- [ ] Emisión sin allocation
+- [ ] Registrar syscalls
+- [ ] Registrar page faults
+- [ ] Registrar page allocation/free
+- [ ] Registrar scheduler events
+- [ ] Exponer salida por UART
+- [ ] Exponer salida por framebuffer/Lua posteriormente
+- [ ] Añadir filtros básicos
 
 ---
 
-## Hito 5: memoria real
+# 4. Interrupciones externas
 
-Debe poder:
-
-```text
-PMM
- ↓
-VMM
- ↓
-TLSF
- ↓
-Lua
-```
-
-Incluye:
-
-* [ ] PMM;
-* [ ] VMM;
-* [ ] regiones;
-* [ ] TLSF;
-* [ ] nuevo allocator de Lua.
+- [ ] Inicializar controlador de interrupciones
+- [ ] Habilitar interrupciones
+- [ ] Timer interrupt
+- [ ] Keyboard interrupt
+- [ ] Contador por IRQ
+- [ ] Ruta IRQ -> event ring -> consumer
+- [ ] Test de overflow
+- [ ] Test con interrupciones rápidas
 
 ---
 
-## Hito 6: sistema extensible
+# 5. Memoria virtual
 
-Debe poder:
+## 5.1. Page tables
 
-```text
-require()
-   ↓
-module
-   ↓
-Lua
-```
+- [ ] Crear API mínima para mapping
+- [ ] Mapear página
+- [ ] Unmapear página
+- [ ] Cambiar permisos
+- [ ] Consultar mapping
+- [ ] Liberar tablas cuando corresponda
+- [ ] Test de mapping básico
+- [ ] Test de permission fault
 
-y el módulo puede cargarse desde memoria o filesystem.
+## 5.2. Area
+
+- [ ] Definir representación de `Area`
+- [ ] Definir intervalo virtual
+- [ ] Definir permisos
+- [ ] Definir backing
+- [ ] Definir commit policy separadamente
+- [ ] No acoplar VMM directamente a VFS
+- [ ] Resolver búsqueda de Area
+- [ ] Definir ownership/lifetime
+
+## 5.3. Backing
+
+- [ ] Anonymous
+- [ ] File-backed
+- [ ] Shared
+- [ ] MMIO
+- [ ] Usar referencias/handles estables
+- [ ] Mantener backing separado de commit
+
+## 5.4. Commit
+
+- [ ] Lazy allocation
+- [ ] Preallocated regions
+- [ ] Guard pages como propiedad de mapping/protection
+- [ ] Definir significado exacto de "committed"
+
+## 5.5. Page fault
+
+- [ ] Obtener CR2
+- [ ] Interpretar error code
+- [ ] Buscar Area
+- [ ] Validar permisos
+- [ ] Resolver anonymous
+- [ ] Resolver shared
+- [ ] Resolver file-backed cuando exista VFS
+- [ ] Resolver MMIO
+- [ ] Mapear página
+- [ ] Reanudar ejecución cuando sea válido
+- [ ] Panic cuando no exista una resolución válida
 
 ---
 
-## Hito 7: sistema utilizable
+# 6. Drivers y primitivas comunes
 
-Debe poder:
+## 6.1. Base
 
-```text
-boot
- ↓
-UI
- ↓
-shell
- ↓
-filesystem
- ↓
-network
-```
+- [ ] Utilizar Slice/StringView donde aporten claridad
+- [ ] Evitar copias innecesarias
+- [ ] Documentar ownership de buffers
+- [ ] Definir protocolos explícitos
+- [ ] Modelar estados relevantes como FSM
 
-sin recompilar el núcleo para cada cambio de lógica Lua.
+## 6.2. Keyboard
+
+- [ ] Driver de teclado
+- [ ] Scancode parsing
+- [ ] Key press/release
+- [ ] Modifiers
+- [ ] Emitir `KeyboardEvent`
+- [ ] Consumidor fuera de ISR
+
+## 6.3. Timer
+
+- [ ] Inicializar timer
+- [ ] Tiempo monotónico
+- [ ] Eventos periódicos
+- [ ] Sleep/wakeup básico
+- [ ] Integración con scheduler futuro
 
 ---
 
-# 29. Dependencias críticas
+# 7. Gráficos
 
-La ruta más importante es:
+## 7.1. Primitive drawing
 
-```text
-Limine
-   ↓
-entrada C
-   ↓
-diagnóstico
-   ↓
-interrupciones
-   ↓
-memoria inicial
-   ↓
-framebuffer
-   ↓
-teclado
-   ↓
-timer
-   ↓
-libc mínima
-   ↓
-Lua
-   ↓
-C ↔ Lua
-   ↓
-µGUI
-   ↓
-buffers
-   ↓
-minibuffer
-   ↓
-coroutines
-   ↓
-scheduler
-```
+- [ ] DrawPixel
+- [ ] Clear
+- [ ] Line
+- [ ] Rectangle
+- [ ] Bitmap font
+- [ ] Tests host-side para primitivas puras
+
+## 7.2. Backbuffer
+
+- [ ] Reservar memoria
+- [ ] Dibujar solamente en backbuffer
+- [ ] Presentar al framebuffer
+- [ ] Medir coste de copia
+
+## 7.3. GUI
+
+- [ ] Mantener biblioteca gráfica semánticamente simple
+- [ ] Separar dibujo de layout
+- [ ] Separar foco de dibujo
+- [ ] Definir regiones/buffers
+- [ ] Evitar que la biblioteca gráfica conozca el teclado
+
+---
+
+# 8. Lua
+
+## 8.1. Integración básica
+
+- [ ] Integrar Lua freestanding
+- [ ] Conectar allocator actual
+- [ ] Ejecutar expresión
+- [ ] Ejecutar bloque
+- [ ] Reportar error
+- [ ] Test de agotamiento de memoria
+
+## 8.2. Frontera C <-> Lua
+
+- [ ] Definir API mínima
+- [ ] Exponer print
+- [ ] Exponer tiempo
+- [ ] Exponer eventos
+- [ ] Exponer primitivas gráficas cuando existan
+- [ ] Validar argumentos
+- [ ] Definir ownership de datos C/Lua
+- [ ] Evitar exponer estructuras internas sin necesidad
+
+## 8.3. Minibuffer
+
+- [ ] Región de entrada
+- [ ] Edición básica
+- [ ] Evaluar Lua
+- [ ] Capturar error
+- [ ] Mostrar resultado
+- [ ] Mantener sistema vivo después de error Lua
+
+---
+
+# 9. Scheduler cooperativo
+
+- [ ] Definir tarea Lua
+- [ ] Coroutine creation
+- [ ] Resume
+- [ ] Yield
+- [ ] Termination
+- [ ] Error state
+- [ ] Run queue
+- [ ] Wait state
+- [ ] Wakeup por evento
+- [ ] Integrar timer
+- [ ] Nunca ejecutar Lua arbitrariamente desde ISR
+- [ ] Probar tarea que no hace yield
+- [ ] Documentar que un loop infinito bloquea el modelo cooperativo
+
+---
+
+# 10. Módulos Lua
+
+## Primero: memoria/registro
+
+- [ ] Módulos embebidos
+- [ ] Registro de módulos disponibles
+- [ ] `require`
+- [ ] Cache
+- [ ] Missing module
+- [ ] Load error
+- [ ] Circular dependency
+
+## Después: filesystem
+
+- [ ] Resolver módulo desde FS
+- [ ] Mantener la misma interfaz conceptual
+- [ ] No acoplar el loader a un único almacenamiento
+
+---
+
+# 11. Filesystem
+
+Implementar solamente cuando el sistema necesite dejar de embebar módulos o exista otra necesidad concreta.
+
+- [ ] Block device interface
+- [ ] Read block
+- [ ] Write block
+- [ ] Estructura mínima de filesystem
+- [ ] Create file
+- [ ] Read file
+- [ ] Write file
+- [ ] List
+- [ ] Delete
+- [ ] Error/corruption handling
+- [ ] Integrar loader de módulos
+
+---
+
+# 12. Network
+
+No empezar hasta que memoria, eventos y planificación sean utilizables.
+
+- [ ] Packet buffer representation
+- [ ] Slice sobre buffers cuando corresponda
+- [ ] NIC driver
+- [ ] RX event
+- [ ] TX path
+- [ ] Ethernet
+- [ ] ARP
+- [ ] IPv4
+- [ ] ICMP
+- [ ] UDP
+- [ ] TCP solamente si una aplicación realmente lo necesita
+- [ ] Primera aplicación simple
+
+---
+
+# 13. Compartición y zero-copy
+
+Antes de optimizar, establecer la baseline con copia.
+
+- [ ] Definir ownership de buffers
+- [ ] Compartir una página
+- [ ] Reference tracking
+- [ ] Liberación cuando no quedan consumidores
+- [ ] Medir copy vs share
+- [ ] Aplicar a buffers de red
+- [ ] Evaluar buffers gráficos
+- [ ] Documentar cuándo la complejidad compensa
+
+---
+
+# 14. Páginas grandes y metadata agrupada
+
+Esto continúa siendo un experimento, no un compromiso arquitectónico.
+
+- [ ] Implementar baseline con metadata simple
+- [ ] Medir metadata por página
+- [ ] Probar metadata agrupada
+- [ ] Medir lookup
+- [ ] Medir alloc/free
+- [ ] Medir split
+- [ ] Medir sharing
+- [ ] Medir fragmentación
+- [ ] Comparar resultados
+- [ ] Registrar decisión
+
+La decisión final puede ser mantener la implementación simple.
+
+---
+
+# 15. Allocator de bloques futuro
+
+El Buddy ya existe y `kmalloc` funciona sobre él. No introducir otro allocator solamente por arquitectura estética.
+
+- [ ] Obtener workload real de allocations
+- [ ] Medir tamaños frecuentes
+- [ ] Medir fragmentación
+- [ ] Medir coste de allocation/free
+- [ ] Evaluar segregated free lists
+- [ ] Evaluar TLSF
+- [ ] Comparar contra allocator actual
+- [ ] Migrar solamente si existe una mejora demostrable
+
+---
+
+# 16. SMP / paralelismo
+
+No es camino crítico.
+
+- [ ] Detectar CPUs
+- [ ] Arrancar CPU secundaria
+- [ ] Stack por CPU
+- [ ] Estado por CPU
+- [ ] Identificar estructuras globales
+- [ ] Identificar estructuras per-CPU
+- [ ] Probar allocations concurrentes
+- [ ] Proteger estructuras compartidas
+- [ ] Medir contención
+- [ ] Scheduler multicore cuando sea necesario
 
 Después:
 
-```text
-PMM
-   ↓
-VMM
-   ↓
-TLSF
-   ↓
-Lua allocator definitivo
-```
-
-y después:
-
-```text
-módulos
-   ↓
-filesystem
-   ↓
-red
-```
-
-Mientras que:
-
-```text
-páginas grandes
-metadata agrupada
-sharing
-zero-copy
-SMP
-```
-
-son una rama posterior y no bloquean el primer sistema funcional.
+- [ ] pools per-CPU
+- [ ] caches locales
+- [ ] estructuras lock-free solamente donde estén justificadas por mediciones
 
 ---
 
-# 30. Orden de trabajo cotidiano
+# 17. Tests internos
 
-Cada tarea debería terminar en una de estas condiciones:
+Esta fase debe crecer junto con los subsistemas, no quedar al final.
 
-```text
-funciona
-```
+## Self-test en boot
 
-o:
+- [ ] Assertion básica
+- [ ] Resultado PASS/FAIL uniforme
+- [ ] Test de Slice
+- [ ] Test de StringView
+- [ ] Test de Buddy
+- [ ] Test de kmalloc/kfree
+- [ ] Test de ring buffer
+- [ ] Test de FSMs críticas
 
-```text
-falla de forma conocida
-```
+## Integration tests
 
-o:
+- [ ] memmap -> Buddy
+- [ ] Buddy -> kmalloc
+- [ ] IRQ -> event queue
+- [ ] page fault -> Area
+- [ ] C API -> Lua
+- [ ] event -> scheduler
+- [ ] module -> error recovery
 
-```text
-hipótesis descartada
-```
+## Regla
 
-Evitar tareas como:
-
-```text
-"trabajar en memoria"
-```
-
-y convertirlas en:
-
-```text
-[ ] leer memory map
-[ ] contar páginas utilizables
-[ ] reservar una página
-[ ] escribir una página
-[ ] liberar una página
-```
-
-Lo mismo para Lua:
-
-```text
-[ ] crear lua_State
-[ ] ejecutar expresión
-[ ] capturar error
-[ ] registrar función C
-[ ] pasar argumento C → Lua
-[ ] devolver resultado Lua → C
-```
-
-Cada commit debería dejar el sistema en un estado arrancable.
+Los tests host-side deben ser rápidos. Los self-tests deben verificar propiedades que solamente existen dentro del kernel. Los integration tests deben probar las fronteras entre subsistemas.
 
 ---
 
-# 31. Regla de alcance
+# 18. Observabilidad
 
-Una característica nueva solamente entra si responde a una necesidad concreta de una capa existente.
+- [ ] kprintf uniforme
+- [ ] panic uniforme
+- [ ] exception report
+- [ ] memory stats
+- [ ] allocator stats
+- [ ] event queue stats
+- [ ] tracing
+- [ ] filtros de tracing
+- [ ] comandos de inspección desde Lua
+
+Objetivo eventual:
+
+```text
+kernel state
+    |
+    +--> UART
+    +--> framebuffer
+    +--> trace buffer
+    +--> Lua inspection
+```
+
+---
+
+# 19. Criterio para cerrar una tarea
+
+Una tarea no está "hecha" porque el código compile.
+
+Debe terminar en una de estas condiciones:
+
+```text
+FUNCIONA
+```
+
+```text
+FALLA DE FORMA CONOCIDA
+```
+
+```text
+HIPÓTESIS DESCARTADA
+```
+
+La tarea debe dejar evidencia suficiente para reproducir el resultado.
+
+---
+
+# 20. Hito funcional inmediato
+
+El siguiente sistema funcional de interés es:
+
+```text
+Limine
+  |
+  v
+kernel C
+  |
+  +--> GDT / IDT / TSS
+  +--> memory map
+  +--> Buddy / kmalloc
+  +--> framebuffer
+  +--> IRQ
+  |
+  v
+event ring
+  |
+  +--> keyboard
+  +--> timer
+  |
+  v
+Lua
+  |
+  +--> UI
+  +--> shell / minibuffer
+  +--> cooperative tasks
+```
+
+Sin filesystem ni red.
+
+Después de ese punto, PMM/VMM/Area, módulos externos, filesystem, red, sharing, zero-copy y SMP pueden evolucionar sobre una base ya observable.
+
+---
+
+# 21. Regla de alcance
+
+Una nueva característica entra al TODO solamente si:
+
+```text
+una capa existente la necesita
+        OR
+existe un experimento concreto que la justifica
+```
+
+No abrir una fase para una tecnología solamente porque podría ser útil algún día.
 
 Ejemplo:
-
-```text
-Lua necesita malloc
-    ↓
-necesitamos allocator
-
-allocator necesita regiones
-    ↓
-necesitamos memoria virtual
-
-memoria virtual necesita páginas
-    ↓
-necesitamos PMM
-```
-
-Pero:
 
 ```text
 "algún día podríamos necesitar NUMA"
 ```
 
-no abre una fase de NUMA.
+no implica implementar NUMA.
 
-La arquitectura debe dejar espacio para ese futuro sin implementarlo.
+La arquitectura debe dejar espacio para el futuro sin pagar su complejidad por adelantado.
 
 ---
 
-# 32. Primera versión que considero completa
+# 22. Orden recomendado de trabajo
 
-La primera versión realmente importante no es la que tiene red.
+Cuando haya varias opciones disponibles, priorizar:
 
-Es esta:
+1. corregir o probar la infraestructura ya existente;
+2. construir primitivas pequeñas y reutilizables;
+3. crear una ruta observable de extremo a extremo;
+4. separar hardware de procesamiento mediante eventos;
+5. implementar VMM y Area cuando sean realmente necesarias;
+6. integrar Lua sobre contratos pequeños;
+7. optimizar solamente después de medir;
+8. añadir filesystem, red y SMP cuando exista una necesidad concreta.
 
-```text
-                Limine
-                   |
-                   v
-              kernel C
-             /    |    \
-           IRQ   MEM    FB
-            |     |      |
-         keyboard |   backbuffer
-                  |
-             memoria inicial
-                  |
-                  v
-                 Lua
-              /    |    \
-             UI  shell  scheduler
-              \    |    /
-                coroutines
-```
-
-Debe poder:
-
-1. arrancar;
-2. mostrar una interfaz;
-3. aceptar teclado;
-4. ejecutar Lua;
-5. ejecutar varias tareas cooperativas;
-6. ejecutar comandos desde el minibuffer;
-7. recuperar errores normales de Lua;
-8. mantenerse activo sin filesystem ni red.
-
-Después de eso, PMM/VMM/TLSF dejan de ser infraestructura abstracta y pasan a sustituir componentes que ya sabes que funcionan.
-
-Ese orden reduce muchísimo el riesgo del proyecto: cuando llegues a las partes difíciles de memoria, ya tendrás una máquina que hace cosas y una batería de pruebas con las que comprobar que no rompiste todo.
+El orden puede cambiar. Las dependencias reales mandan.
