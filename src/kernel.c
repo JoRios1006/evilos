@@ -60,7 +60,7 @@ __attribute__((
                        .revision = 0};
 
 __attribute__((used,
-               section(".requests"))) static volatile struct limine_rsdp_request
+               section(".requests")))  volatile struct limine_rsdp_request
     rsdp_req = {.id = LIMINE_RSDP_REQUEST_ID, .revision = 0};
 
 // 5. Marcador de fin
