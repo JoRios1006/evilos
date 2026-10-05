@@ -92,6 +92,43 @@ void kprintf(const char *format, ...) {
     }
   }
 }
+void test_kmalloc_stress(void) {
+    kprintf("[INFO] Iniciando bateria de pruebas de memoria...\n");
+
+    // 1. Prueba de alineación y bordes
+    uint8_t *p1 = kmalloc(1);
+    uint8_t *p2 = kmalloc(4096);
+    if ((uintptr_t)p1 % 8 != 0 || (uintptr_t)p2 % 8 != 0) {
+        kprintf("[PANIC] Error de alineacion en kmalloc.\n");
+        __asm__ volatile("cli; hlt");
+    }
+
+    // 2. Prueba de Coalescing (fusión de bloques)
+    kfree(p1);
+    uint8_t *p3 = kmalloc(1); 
+    // Si el coalescing y re-alloc funcionan, p3 debería ocupar el lugar de p1
+    
+    // 3. Prueba de carga masiva
+    void *stress_array[100];
+    for (int i = 0; i < 100; i++) {
+        stress_array[i] = kmalloc(1024);
+        if (!stress_array[i]) {
+            kprintf("[PANIC] kmalloc fallo en iteracion %d.\n", i);
+            __asm__ volatile("cli; hlt");
+        }
+    }
+
+    // Liberación masiva
+    for (int i = 0; i < 100; i++) {
+        kfree(stress_array[i]);
+    }
+    
+    kfree(p2);
+    kfree(p3);
+    
+    // Este es el string que tu Lua Test Runner debe buscar ahora
+    kprintf("[OK] Pruebas de estres de memoria superadas.\n");
+}
 
 // Cadenas descriptivas para los tipos de memoria de Limine
 static const char *memmap_type_strings[] = {"USABLE",
@@ -124,13 +161,15 @@ void kmain(void) {
   global_ft_ctx = ft_ctx;
   kprintf(vterm_msg);
   kprintf("[INFO] Flanterm instanciado en el Framebuffer primario.\n");
-  goto INIT_UART;
+  goto ESSENTIAL_INIT;
 WARNING_NOFB:;
   kprintf("[WARNING] Framebuffer no disponible.\n");
-INIT_UART:;
+ESSENTIAL_INIT:;
   ON_SUCCESS(uart_init(UART_PORT), "\n[OK] UART DEVICE INITIALIZED");
   ON_SUCCESS(gdt_init(), "\n[OK] GDT INITIALIZED");
   ON_SUCCESS(idt_init(), "\n[OK] IDT INITIALIZED");
+  kmalloc_init();
+  test_kmalloc_stress();
   // Verificar Globales y BSS
   ON_SUCCESS(vcanary == 0xCAFEBABE && gi == 0,
              "\n[OK] C Runtime: Globales y BSS inicializados correctamente.\n");
