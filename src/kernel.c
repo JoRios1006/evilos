@@ -139,7 +139,7 @@ void test_kmalloc_stress(struct buddy *kernel_buddy) {
   uint64_t end_cycles = rdtsc();
   uint64_t elapsed_cycles = end_cycles - start_cycles;
   kprintf("[OK] Pruebas de estres de memoria superadas.\n");
-  kprintf("kmalloc consumio: %dk ciclos de CPU\n", elapsed_cycles / 1000);
+  kprintf("kmalloc consumio: %dk ciclos de CPU\n", elapsed_cycles);
 }
 
 // Cadenas descriptivas para los tipos de memoria de Limine

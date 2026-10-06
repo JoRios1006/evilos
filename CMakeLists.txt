@@ -86,6 +86,7 @@ target_include_directories(kernel.elf PRIVATE
     src
     src/memory
     src/uacpi_hooks
+    ${CMAKE_CURRENT_SOURCE_DIR}/external
     ${UACPI_INCLUDES}
 )
 

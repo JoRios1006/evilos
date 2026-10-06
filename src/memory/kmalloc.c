@@ -1,10 +1,9 @@
 #include "kmalloc.h"
 #include "../limine.h"
 #include "string.h"
-
-extern void kprintf(const char *format, ...);
 #define BUDDY_PRINTF kprintf
 #include "buddy_alloc.h"
+extern void kprintf(const char *format, ...);
 
 extern volatile struct limine_memmap_request memmap_req;
 extern volatile struct limine_hhdm_request hhdm_req;

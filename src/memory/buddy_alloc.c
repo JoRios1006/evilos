@@ -4,4 +4,5 @@ extern void kprintf(const char *format, ...);
 
 // Único punto donde se genera la implementación de la librería
 #define BUDDY_ALLOC_IMPLEMENTATION
+// cppcheck-suppress misra-c2012-20.1
 #include "buddy_alloc.h"
