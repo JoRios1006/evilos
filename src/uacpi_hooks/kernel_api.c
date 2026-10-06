@@ -10,12 +10,16 @@ extern volatile struct limine_rsdp_request rsdp_req;
 // -----------------------------------------------------------------------------
 // MEMORIA DINÁMICA (Conectado a Buddy Allocator)
 // -----------------------------------------------------------------------------
-void *uacpi_kernel_alloc(uacpi_size size) {
-    return kmalloc(size);
+extern struct buddy *kernel_buddy;
+
+void *uacpi_kernel_alloc(size_t size) {
+    // Pass the buddy allocator explicitly
+    return kmalloc(kernel_buddy, size);
 }
 
 void uacpi_kernel_free(void *mem) {
-    kfree(mem);
+    // Pass the buddy allocator explicitly
+    kfree(kernel_buddy, mem);
 }
 
 uacpi_status uacpi_kernel_get_rsdp(uacpi_phys_addr *out_rsdp_address) {

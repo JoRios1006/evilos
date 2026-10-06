@@ -1,7 +1,9 @@
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/idt.h"
+#include "arch/x86_64/time.h"
 #include "drivers/uart.h"
 #include "limine.h"
+#include "memory/kmalloc.h"
 #include "string.h"
 #include <flanterm.h>
 #include <flanterm_backends/fb.h>
@@ -10,7 +12,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "memory/kmalloc.h"
+#include <uacpi/acpi.h>
+#include <uacpi/tables.h>
+#include <uacpi/uacpi.h>
+#define STRESS_TRIES 10000
 #define NUKE *(volatile char *)0 = 0;
 #define UART_PORT 0x3F8
 #define ON_SUCCESS(expr, msg)                                                  \
@@ -38,19 +43,19 @@ __attribute__((
     LIMINE_BASE_REVISION(3);
 
 // 3. Solicitudes anteriores (HHDM y Framebuffer)
-__attribute__((used,
-               section(".requests"))) volatile struct limine_hhdm_request
+__attribute__((used, section(".requests"))) volatile struct limine_hhdm_request
     hhdm_req = {.id = LIMINE_HHDM_REQUEST_ID, .revision = 0};
 
 __attribute__((
     used,
-    section(".requests"))) volatile struct limine_framebuffer_request
-    fb_req = {.id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 0};
+    section(".requests"))) volatile struct limine_framebuffer_request fb_req = {
+    .id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 0};
 
 // 4. NUEVAS SOLICITUDES PARA TAREAS
 __attribute__((
-    used, section(".requests"))) volatile struct limine_memmap_request
-    memmap_req = {.id = LIMINE_MEMMAP_REQUEST_ID, .revision = 0};
+    used,
+    section(".requests"))) volatile struct limine_memmap_request memmap_req = {
+    .id = LIMINE_MEMMAP_REQUEST_ID, .revision = 0};
 
 __attribute__((
     used,
@@ -59,8 +64,7 @@ __attribute__((
     kernel_addr_req = {.id = LIMINE_EXECUTABLE_ADDRESS_REQUEST_ID,
                        .revision = 0};
 
-__attribute__((used,
-               section(".requests")))  volatile struct limine_rsdp_request
+__attribute__((used, section(".requests"))) volatile struct limine_rsdp_request
     rsdp_req = {.id = LIMINE_RSDP_REQUEST_ID, .revision = 0};
 
 // 5. Marcador de fin
@@ -92,42 +96,50 @@ void kprintf(const char *format, ...) {
     }
   }
 }
-void test_kmalloc_stress(void) {
-    kprintf("[INFO] Iniciando bateria de pruebas de memoria...\n");
+void test_kmalloc_stress(struct buddy *kernel_buddy) {
+  kprintf("[INFO] Iniciando bateria de pruebas de memoria...\n");
+  uint64_t start_cycles = rdtsc();
 
-    // 1. Prueba de alineación y bordes
-    uint8_t *p1 = kmalloc(1);
-    uint8_t *p2 = kmalloc(4096);
-    if ((uintptr_t)p1 % 8 != 0 || (uintptr_t)p2 % 8 != 0) {
-        kprintf("[PANIC] Error de alineacion en kmalloc.\n");
-        __asm__ volatile("cli; hlt");
-    }
+  // 1. Prueba de alineación y bordes
+  // cppcheck-suppress misra-c2012-11.5
+  uint8_t *p1 = (uint8_t *) kmalloc(kernel_buddy, 1);
+  // cppcheck-suppress misra-c2012-11.5
+  uint8_t *p2 = (uint8_t *) kmalloc(kernel_buddy, 4096);
+  if ((uintptr_t)p1 % 8 != 0 || (uintptr_t)p2 % 8 != 0) {
+    kprintf("[PANIC] Error de alineacion en kmalloc.\n");
+    __asm__ volatile("cli; hlt");
+  }
 
-    // 2. Prueba de Coalescing (fusión de bloques)
-    kfree(p1);
-    uint8_t *p3 = kmalloc(1); 
-    // Si el coalescing y re-alloc funcionan, p3 debería ocupar el lugar de p1
-    
-    // 3. Prueba de carga masiva
-    void *stress_array[100];
-    for (int i = 0; i < 100; i++) {
-        stress_array[i] = kmalloc(1024);
-        if (!stress_array[i]) {
-            kprintf("[PANIC] kmalloc fallo en iteracion %d.\n", i);
-            __asm__ volatile("cli; hlt");
-        }
-    }
+  // 2. Prueba de Coalescing (fusión de bloques)
+  kfree(kernel_buddy, p1);
+  // cppcheck-suppress misra-c2012-11.5
+  uint8_t *p3 = (uint8_t *) kmalloc(kernel_buddy, 1);
+  // Si el coalescing y re-alloc funcionan, p3 debería ocupar el lugar de p1
 
-    // Liberación masiva
-    for (int i = 0; i < 100; i++) {
-        kfree(stress_array[i]);
+  // 3. Prueba de carga masiva (Sin arreglos, usando lista enlazada intrusiva)
+  void **head = NULL; // Cabeza de la lista de bloques
+  for (int i = 0; i < STRESS_TRIES; i++) {
+    void **current_block = (void **)kmalloc(kernel_buddy, 1024);
+    if (!current_block) {
+      kprintf("[PANIC] kmalloc fallo en iteracion %d.\n", i);
+      __asm__ volatile("cli; hlt");
     }
-    
-    kfree(p2);
-    kfree(p3);
-    
-    // Este es el string que tu Lua Test Runner debe buscar ahora
-    kprintf("[OK] Pruebas de estres de memoria superadas.\n");
+    *current_block = head;
+    head = current_block;
+  }
+
+  // Liberación masiva
+  while (head != NULL) {
+    // Leemos cuál era el siguiente bloque antes de liberar la memoria actual
+    void **next_block = (void **)(*head);
+    kfree(kernel_buddy, head);
+    head = next_block;
+  }
+  // Este es el string que tu Lua Test Runner debe buscar ahora
+  uint64_t end_cycles = rdtsc();
+  uint64_t elapsed_cycles = end_cycles - start_cycles;
+  kprintf("[OK] Pruebas de estres de memoria superadas.\n");
+  kprintf("kmalloc consumio: %dk ciclos de CPU\n", elapsed_cycles / 1000);
 }
 
 // Cadenas descriptivas para los tipos de memoria de Limine
@@ -148,7 +160,9 @@ static const char vterm_msg[] =
     "\n\033[32m[OK]\033[0m Emulador de terminal VT100 inicializado.\n"
     "\n\033[36mBienvenidos a Evilos (x86_64)\033[0m\n\n";
 
+struct buddy *kernel_buddy = NULL;
 void kmain(void) {
+
   // INITIALIZE_FLANTERM:;
   if (fb_req.response == NULL || fb_req.response->framebuffer_count == 0)
     goto WARNING_NOFB;
@@ -168,8 +182,8 @@ ESSENTIAL_INIT:;
   ON_SUCCESS(uart_init(UART_PORT), "\n[OK] UART DEVICE INITIALIZED");
   ON_SUCCESS(gdt_init(), "\n[OK] GDT INITIALIZED");
   ON_SUCCESS(idt_init(), "\n[OK] IDT INITIALIZED");
-  kmalloc_init();
-  test_kmalloc_stress();
+  kernel_buddy = kmalloc_init();
+  test_kmalloc_stress(kernel_buddy);
   // Verificar Globales y BSS
   ON_SUCCESS(vcanary == 0xCAFEBABE && gi == 0,
              "\n[OK] C Runtime: Globales y BSS inicializados correctamente.\n");
@@ -224,14 +238,14 @@ SHOW_MEMORY:;
     goto SHOW_MEMORY;
   gi = 0;
   // Inicializar memoria dinámica
-  kmalloc_init();
+  kernel_buddy = kmalloc_init();
 
   // Prueba de humo de la Fase 3
-  void *test_ptr = kmalloc(4096);
+  void *test_ptr = kmalloc(kernel_buddy, 4096);
   if (test_ptr) {
     kprintf("[OK] Prueba de kmalloc exitosa. Bloque asignado en: 0x%x\n",
             (uint64_t)test_ptr);
-    kfree(test_ptr);
+    kfree(kernel_buddy, test_ptr);
     kprintf("[OK] kfree ejecutado correctamente.\n");
   } else {
     kprintf("[ERROR] Fallo en la prueba de kmalloc.\n");
